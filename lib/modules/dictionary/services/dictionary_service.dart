@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:sqflite/sqflite.dart';
 import '../../../core/database/database_helper.dart';
 import '../../translation/services/translation_service.dart';
 import '../models/dictionary_entry.dart';
