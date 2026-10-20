@@ -1,30 +1,84 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:langcurve/core/database/database_helper.dart';
 import 'package:langcurve/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  late Database db;
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+  setUpAll(() async {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+    db = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
+    await db.execute('''
+      CREATE TABLE topics (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL,
+        description TEXT
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE vocabularies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        topic_id INTEGER NOT NULL,
+        word TEXT NOT NULL,
+        definition TEXT DEFAULT '',
+        part_of_speech TEXT DEFAULT '',
+        phonetic_uk TEXT,
+        audio_url_uk TEXT,
+        phonetic_us TEXT,
+        audio_url_us TEXT,
+        user_example TEXT,
+        easiness REAL DEFAULT 2.5,
+        interval INTEGER DEFAULT 0,
+        repetitions INTEGER DEFAULT 0,
+        due_date TEXT NOT NULL,
+        correct_count INTEGER DEFAULT 0,
+        wrong_count INTEGER DEFAULT 0,
+        cefr_level TEXT,
+        synonyms TEXT,
+        antonyms TEXT,
+        FOREIGN KEY (topic_id) REFERENCES topics (id) ON DELETE CASCADE,
+        UNIQUE(topic_id, word)
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE review_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER DEFAULT 1,
+        word TEXT NOT NULL,
+        quality INTEGER NOT NULL,
+        easiness REAL NOT NULL,
+        interval INTEGER NOT NULL,
+        created_at TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE user_profile (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        xp INTEGER DEFAULT 0,
+        email TEXT
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE word_cache (
+        word TEXT PRIMARY KEY,
+        source TEXT,
+        raw_payload TEXT,
+        updated_at TEXT
+      )
+    ''');
+    await db.insert('user_profile', {'id': 1, 'xp': 0, 'email': 'test@langcurve.local'});
+    DatabaseHelper.withDatabase(db);
+  });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+  tearDownAll(() async {
+    await db.close();
+  });
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+  testWidgets('LangCurveApp smoke test', (WidgetTester tester) async {
+    await tester.pumpWidget(const LangCurveApp());
+    await tester.pump(const Duration(seconds: 15));
+    expect(find.text('LangCurve'), findsOneWidget);
   });
 }
