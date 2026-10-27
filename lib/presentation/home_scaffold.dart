@@ -17,19 +17,23 @@ class AdaptiveHomeScaffold extends StatefulWidget {
 class _AdaptiveHomeScaffoldState extends State<AdaptiveHomeScaffold> {
   int _selectedTabIndex = 0;
   int _userXp = 0;
+  int _streakCount = 0;
   int? _practiceTopicId;
   final NotebookRepository _notebookRepo = NotebookRepository();
 
   @override
   void initState() {
     super.initState();
-    _loadXp();
+    _loadProfileData();
   }
 
-  Future<void> _loadXp() async {
-    final xp = await _notebookRepo.getUserXp();
+  Future<void> _loadProfileData() async {
+    final profile = await _notebookRepo.getUserProfile();
     if (mounted) {
-      setState(() => _userXp = xp);
+      setState(() {
+        _userXp = profile['xp'] as int;
+        _streakCount = profile['streak_count'] as int;
+      });
     }
   }
 
@@ -40,7 +44,7 @@ class _AdaptiveHomeScaffoldState extends State<AdaptiveHomeScaffold> {
         _practiceTopicId = topicId;
       }
     });
-    _loadXp();
+    _loadProfileData();
   }
 
   @override
@@ -71,6 +75,31 @@ class _AdaptiveHomeScaffoldState extends State<AdaptiveHomeScaffold> {
           ],
         ),
         actions: [
+          // Daily Streak Chip
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            margin: const EdgeInsets.only(right: 6),
+            decoration: BoxDecoration(
+              color: Colors.orange.shade100,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('🔥', style: TextStyle(fontSize: 14)),
+                const SizedBox(width: 4),
+                Text(
+                  '$_streakCount ngày',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.orange.shade900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
           // XP Chip
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -114,7 +143,7 @@ class _AdaptiveHomeScaffoldState extends State<AdaptiveHomeScaffold> {
             onPressed: () {
               showDialog(
                 context: context,
-                builder: (_) => SettingsDialog(onDataChanged: _loadXp),
+                builder: (_) => SettingsDialog(onDataChanged: _loadProfileData),
               );
             },
           ),

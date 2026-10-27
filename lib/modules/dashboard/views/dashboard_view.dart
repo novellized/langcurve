@@ -27,6 +27,9 @@ class _DashboardViewState extends State<DashboardView> {
     'total_words': 0,
     'total_examples': 0,
     'xp': 0,
+    'streak_count': 0,
+    'daily_goal': 10,
+    'today_reviewed_count': 0,
   };
   int _dueWordsCount = 0;
   List<CurveDataPoint> _curveData = [];
@@ -39,13 +42,13 @@ class _DashboardViewState extends State<DashboardView> {
     _loadDashboardData();
   }
 
-  Future<void> _loadDashboardData() async {
+  Future<void> _loadDashboardData({bool forceRefreshVideos = false}) async {
     setState(() => _isLoading = true);
     try {
       final stats = await _notebookRepo.getStats();
       final dueWords = await _srsRepo.getDueOnlyVocabularies();
       final curve = await _trackingService.getLearningCurve();
-      final videos = await _videoService.fetchVideos();
+      final videos = await _videoService.fetchVideos(forceRefresh: forceRefreshVideos);
 
       if (mounted) {
         setState(() {
@@ -61,6 +64,38 @@ class _DashboardViewState extends State<DashboardView> {
     }
   }
 
+  void _showEditDailyGoalDialog() {
+    final controller = TextEditingController(text: '${_stats['daily_goal'] ?? 10}');
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Đặt mục tiêu từ vựng hàng ngày'),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: 'Số từ muốn ôn tập mỗi ngày',
+            suffixText: 'từ/ngày',
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy')),
+          FilledButton(
+            onPressed: () async {
+              final val = int.tryParse(controller.text.trim());
+              if (val != null && val > 0) {
+                await _notebookRepo.updateDailyGoal(val);
+                if (ctx.mounted) Navigator.pop(ctx);
+                _loadDashboardData();
+              }
+            },
+            child: const Text('Lưu mục tiêu'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -70,30 +105,34 @@ class _DashboardViewState extends State<DashboardView> {
     }
 
     return RefreshIndicator(
-      onRefresh: _loadDashboardData,
+      onRefresh: () => _loadDashboardData(forceRefreshVideos: true),
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 1. Welcome & XP Banner
+            // 1. Welcome, Streak & Daily Goal Banner
             _buildWelcomeBanner(colorScheme),
             const SizedBox(height: 16),
 
-            // 2. Statistics Grid
+            // 2. Quick Action Buttons
+            _buildQuickActions(colorScheme),
+            const SizedBox(height: 16),
+
+            // 3. Statistics Grid
             _buildStatsGrid(colorScheme),
             const SizedBox(height: 16),
 
-            // 3. Spaced Repetition Due Banner
+            // 4. Spaced Repetition Due Banner
             _buildDueReviewBanner(colorScheme),
             const SizedBox(height: 24),
 
-            // 4. Learning Curve Analytics Chart
+            // 5. Learning Curve Analytics Chart
             _buildLearningCurveSection(colorScheme),
             const SizedBox(height: 24),
 
-            // 5. BBC Learning English Videos Section
+            // 6. BBC Learning English Videos Section
             _buildBbcVideosSection(colorScheme),
           ],
         ),
@@ -102,60 +141,154 @@ class _DashboardViewState extends State<DashboardView> {
   }
 
   Widget _buildWelcomeBanner(ColorScheme colorScheme) {
+    final todayCount = _stats['today_reviewed_count'] ?? 0;
+    final dailyGoal = _stats['daily_goal'] ?? 10;
+    final progress = (todayCount / dailyGoal).clamp(0.0, 1.0);
+    final streak = _stats['streak_count'] ?? 0;
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: colorScheme.primaryContainer,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(24),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Chào mừng bạn đến với LangCurve',
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Chào mừng trở lại! 👋',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: colorScheme.onPrimaryContainer,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Duy trì thói quen học từ vựng cùng LangCurve.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: colorScheme.onPrimaryContainer.withValues(alpha: 0.8),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Streak Badge
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade100,
+                  borderRadius: BorderRadius.circular(30),
+                  border: Border.all(color: Colors.orange.shade300),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('🔥', style: TextStyle(fontSize: 18)),
+                    const SizedBox(width: 4),
+                    Text(
+                      '$streak ngày',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: Colors.orange.shade900,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // Daily Goal Progress Bar
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  const Text('🎯', style: TextStyle(fontSize: 16)),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Mục tiêu hôm nay: $todayCount/$dailyGoal từ',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: colorScheme.onPrimaryContainer,
+                    ),
+                  ),
+                ],
+              ),
+              InkWell(
+                onTap: _showEditDailyGoalDialog,
+                child: Text(
+                  'Đổi mục tiêu',
                   style: TextStyle(
-                    fontSize: 18,
+                    fontSize: 12,
                     fontWeight: FontWeight.bold,
-                    color: colorScheme.onPrimaryContainer,
+                    color: colorScheme.primary,
+                    decoration: TextDecoration.underline,
                   ),
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  'Theo dõi đường cong học tập và làm chủ từ vựng mỗi ngày.',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: colorScheme.onPrimaryContainer.withValues(alpha: 0.8),
-                  ),
-                ),
-              ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 10,
+              backgroundColor: colorScheme.surfaceContainerHighest,
+              color: colorScheme.primary,
             ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: BoxDecoration(
-              color: colorScheme.primary,
-              borderRadius: BorderRadius.circular(30),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.bolt, color: Colors.amber, size: 20),
-                const SizedBox(width: 4),
-                Text(
-                  '${_stats['xp']} XP',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: colorScheme.onPrimary,
-                  ),
-                ),
-              ],
-            ),
-          )
         ],
       ),
+    );
+  }
+
+  Widget _buildQuickActions(ColorScheme colorScheme) {
+    return Row(
+      children: [
+        Expanded(
+          child: ActionChip(
+            avatar: const Icon(Icons.school, size: 18),
+            label: const Text('Ôn SM-2'),
+            onPressed: () {
+              if (widget.onNavigate != null) widget.onNavigate!(3);
+            },
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: ActionChip(
+            avatar: const Icon(Icons.quiz, size: 18),
+            label: const Text('Thách Quiz'),
+            onPressed: () {
+              if (widget.onNavigate != null) widget.onNavigate!(3);
+            },
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: ActionChip(
+            avatar: const Icon(Icons.search, size: 18),
+            label: const Text('Tra từ mới'),
+            onPressed: () {
+              if (widget.onNavigate != null) widget.onNavigate!(1);
+            },
+          ),
+        ),
+      ],
     );
   }
 
@@ -373,7 +506,6 @@ class _DashboardViewState extends State<DashboardView> {
                         ),
                         borderData: FlBorderData(show: false),
                         lineBarsData: [
-                          // Words count line
                           LineChartBarData(
                             spots: _curveData.asMap().entries.map((e) {
                               return FlSpot(e.key.toDouble(), e.value.wordCount.toDouble());
@@ -398,16 +530,26 @@ class _DashboardViewState extends State<DashboardView> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Icon(Icons.ondemand_video, size: 20, color: Colors.red),
-            const SizedBox(width: 8),
-            Text(
-              'Bài học BBC Learning English mới nhất',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: colorScheme.onSurface,
-              ),
+            Row(
+              children: [
+                const Icon(Icons.ondemand_video, size: 20, color: Colors.red),
+                const SizedBox(width: 8),
+                Text(
+                  'Bài học BBC Learning English mới nhất',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: colorScheme.onSurface,
+                  ),
+                ),
+              ],
+            ),
+            IconButton(
+              icon: const Icon(Icons.refresh, size: 18),
+              tooltip: 'Đồng bộ bài học BBC mới',
+              onPressed: () => _loadDashboardData(forceRefreshVideos: true),
             ),
           ],
         ),
@@ -453,10 +595,13 @@ class _DashboardViewState extends State<DashboardView> {
                   ),
                 ),
                 trailing: const Icon(Icons.open_in_new, size: 18),
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Mở bài học: ${video.title}')),
-                  );
+                onTap: () async {
+                  final launched = await BbcVideoSyncService.openVideo(video.id);
+                  if (!launched && context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Không thể mở video ${video.title}')),
+                    );
+                  }
                 },
               ),
             );

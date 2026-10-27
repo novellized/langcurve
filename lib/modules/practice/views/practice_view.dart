@@ -1,5 +1,6 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:audioplayers/audioplayers.dart';
+import '../../../core/services/audio_service.dart';
 import '../../notebook/repositories/notebook_repository.dart';
 import '../../notebook/models/topic.dart';
 import '../../notebook/models/vocabulary.dart';
@@ -17,19 +18,31 @@ class PracticeView extends StatefulWidget {
   State<PracticeView> createState() => _PracticeViewState();
 }
 
+enum PracticeMode { sm2Flashcard, quizChoice }
+
 class _PracticeViewState extends State<PracticeView> {
   final NotebookRepository _notebookRepo = NotebookRepository();
   final SrsRepository _srsRepo = SrsRepository();
   final GrammarCheckerService _grammarChecker = GrammarCheckerService();
-  final AudioPlayer _audioPlayer = AudioPlayer();
+  final AudioService _audioService = AudioService();
 
   List<Topic> _topics = [];
-  int? _selectedTopicId; // null = all due words
+  int? _selectedTopicId;
 
   List<Vocabulary> _studyWords = [];
+  List<Vocabulary> _allVocabs = [];
   int _currentIndex = 0;
   bool _isFlipped = false;
   bool _isLoading = true;
+
+  // Mode & Audio controls
+  PracticeMode _mode = PracticeMode.sm2Flashcard;
+  double _playbackRate = 1.0;
+
+  // Quiz state
+  List<String> _quizOptions = [];
+  int? _selectedQuizIndex;
+  bool _quizAnswered = false;
 
   // Sentence writing & grammar check
   final TextEditingController _sentenceController = TextEditingController();
@@ -46,17 +59,19 @@ class _PracticeViewState extends State<PracticeView> {
   @override
   void dispose() {
     _sentenceController.dispose();
-    _audioPlayer.dispose();
+    _audioService.dispose();
     super.dispose();
   }
 
   Future<void> _initPractice() async {
     setState(() => _isLoading = true);
     final topics = await _notebookRepo.getTopics();
+    final allVocabs = await _notebookRepo.getAllVocabularies();
     await _loadStudyWords();
     if (mounted) {
       setState(() {
         _topics = topics;
+        _allVocabs = allVocabs;
         _isLoading = false;
       });
     }
@@ -65,7 +80,6 @@ class _PracticeViewState extends State<PracticeView> {
   Future<void> _loadStudyWords() async {
     List<Vocabulary> words;
     if (_selectedTopicId == null) {
-      // Due words across all topics
       words = await _srsRepo.getDueOnlyVocabularies();
       if (words.isEmpty) {
         words = await _srsRepo.getVocabulariesForReview();
@@ -82,15 +96,62 @@ class _PracticeViewState extends State<PracticeView> {
         _isFlipped = false;
         _sentenceController.clear();
         _grammarErrors = [];
+        _selectedQuizIndex = null;
+        _quizAnswered = false;
       });
+      _generateQuizOptions();
     }
   }
 
-  Future<void> _playAudio(String? url) async {
-    if (url == null || url.isEmpty) return;
+  void _generateQuizOptions() {
+    if (_studyWords.isEmpty) return;
+    final current = _studyWords[_currentIndex];
+    final correctDef = current.definition.isNotEmpty
+        ? current.definition
+        : 'Từ vựng: ${current.word}';
+
+    final Set<String> optionSet = {correctDef};
+    final random = Random();
+
+    // Pick distractor definitions
+    final pool = _allVocabs.where((v) => v.word != current.word && v.definition.isNotEmpty).toList();
+    pool.shuffle();
+
+    for (final v in pool) {
+      if (optionSet.length >= 4) break;
+      optionSet.add(v.definition);
+    }
+
+    // Fallbacks if not enough distractors
+    final dummyDistractors = [
+      'Khái niệm mô tả hành động hoặc trạng thái.',
+      'Thuật ngữ chuyên ngành ngôn ngữ.',
+      'Từ đồng nghĩa với khái niệm chính.',
+      'Phương pháp học tập ghi nhớ dài hạn.'
+    ];
+
+    while (optionSet.length < 4) {
+      optionSet.add(dummyDistractors[random.nextInt(dummyDistractors.length)]);
+    }
+
+    final list = optionSet.toList()..shuffle();
+    setState(() {
+      _quizOptions = list;
+      _selectedQuizIndex = null;
+      _quizAnswered = false;
+    });
+  }
+
+  Future<void> _playAudio(String? url, {required bool isUk}) async {
+    if (_studyWords.isEmpty) return;
+    final currentWord = _studyWords[_currentIndex].word;
     try {
-      await _audioPlayer.stop();
-      await _audioPlayer.play(UrlSource(url));
+      await _audioService.playWordAudio(
+        url,
+        currentWord,
+        isUk: isUk,
+        playbackRate: _playbackRate,
+      );
     } catch (_) {}
   }
 
@@ -118,11 +179,12 @@ class _PracticeViewState extends State<PracticeView> {
       await _notebookRepo.updateExample(currentWord.id!, userSentence);
     }
 
-    // Record review in SRS
+    // Record review in SRS & update streak
     final updated = await _srsRepo.recordReview(
       vocabId: currentWord.id!,
       quality: quality,
     );
+    await _notebookRepo.recordStudySession();
 
     if (mounted) {
       final xpGained = quality == 5 ? 20 : (quality >= 3 ? 10 : 0);
@@ -137,16 +199,56 @@ class _PracticeViewState extends State<PracticeView> {
         ),
       );
 
-      setState(() {
-        if (_currentIndex < _studyWords.length - 1) {
-          _currentIndex++;
-          _isFlipped = false;
-          _sentenceController.clear();
-          _grammarErrors = [];
-        } else {
-          _studyWords = [];
-        }
-      });
+      _nextWord();
+    }
+  }
+
+  void _nextWord() {
+    setState(() {
+      if (_currentIndex < _studyWords.length - 1) {
+        _currentIndex++;
+        _isFlipped = false;
+        _sentenceController.clear();
+        _grammarErrors = [];
+        _selectedQuizIndex = null;
+        _quizAnswered = false;
+        _generateQuizOptions();
+      } else {
+        _studyWords = [];
+      }
+    });
+  }
+
+  void _handleQuizSelection(int index) async {
+    if (_quizAnswered || _studyWords.isEmpty) return;
+
+    final current = _studyWords[_currentIndex];
+    final correctDef = current.definition.isNotEmpty
+        ? current.definition
+        : 'Từ vựng: ${current.word}';
+
+    final selectedText = _quizOptions[index];
+    final isCorrect = selectedText == correctDef;
+
+    setState(() {
+      _selectedQuizIndex = index;
+      _quizAnswered = true;
+    });
+
+    final quality = isCorrect ? 5 : 1;
+    await _srsRepo.recordReview(vocabId: current.id!, quality: quality);
+    await _notebookRepo.recordStudySession();
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isCorrect ? 'Chính xác! +20 XP 🔥' : 'Chưa đúng! Đáp án đúng là: $correctDef',
+          ),
+          backgroundColor: isCorrect ? Colors.green.shade700 : Colors.red.shade700,
+          duration: const Duration(seconds: 2),
+        ),
+      );
     }
   }
 
@@ -163,57 +265,105 @@ class _PracticeViewState extends State<PracticeView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 1. Topic Filter Selector
-          _buildTopicSelector(colorScheme),
+          // 1. Topic Filter Selector & Mode Switcher
+          _buildControlsHeader(colorScheme),
           const SizedBox(height: 16),
 
-          // 2. Practice Card / Empty State
+          // 2. Practice Area / Empty State
           if (_studyWords.isEmpty)
             _buildEmptyState(colorScheme)
+          else if (_mode == PracticeMode.sm2Flashcard)
+            _buildFlashcardMode(colorScheme)
           else
-            _buildFlashcard(colorScheme),
+            _buildQuizMode(colorScheme),
         ],
       ),
     );
   }
 
-  Widget _buildTopicSelector(ColorScheme colorScheme) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainer,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.tune, size: 20),
-          const SizedBox(width: 10),
-          Expanded(
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<int?>(
-                value: _selectedTopicId,
-                isExpanded: true,
-                items: [
-                  const DropdownMenuItem<int?>(
-                    value: null,
-                    child: Text('Tất cả từ đến hạn ôn (SRS)'),
+  Widget _buildControlsHeader(ColorScheme colorScheme) {
+    return Column(
+      children: [
+        // Topic Selector Dropdown
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainer,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.tune, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<int?>(
+                    value: _selectedTopicId,
+                    isExpanded: true,
+                    items: [
+                      const DropdownMenuItem<int?>(
+                        value: null,
+                        child: Text('Tất cả từ đến hạn ôn (SRS)'),
+                      ),
+                      ..._topics.map((t) {
+                        return DropdownMenuItem<int?>(
+                          value: t.id,
+                          child: Text('Chủ đề: ${t.name} (${t.wordCount} từ)'),
+                        );
+                      }),
+                    ],
+                    onChanged: (val) {
+                      setState(() => _selectedTopicId = val);
+                      _loadStudyWords();
+                    },
                   ),
-                  ..._topics.map((t) {
-                    return DropdownMenuItem<int?>(
-                      value: t.id,
-                      child: Text('Chủ đề: ${t.name} (${t.wordCount} từ)'),
-                    );
-                  }),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // Mode Switcher Segmented Button & Audio Speed Control
+        Row(
+          children: [
+            Expanded(
+              child: SegmentedButton<PracticeMode>(
+                segments: const [
+                  ButtonSegment(
+                    value: PracticeMode.sm2Flashcard,
+                    label: Text('Thẻ SM-2'),
+                    icon: Icon(Icons.style),
+                  ),
+                  ButtonSegment(
+                    value: PracticeMode.quizChoice,
+                    label: Text('Quiz'),
+                    icon: Icon(Icons.quiz),
+                  ),
                 ],
-                onChanged: (val) {
-                  setState(() => _selectedTopicId = val);
-                  _loadStudyWords();
+                selected: {_mode},
+                onSelectionChanged: (set) {
+                  setState(() => _mode = set.first);
                 },
               ),
             ),
-          ),
-        ],
-      ),
+            const SizedBox(width: 8),
+            ActionChip(
+              avatar: Icon(
+                _playbackRate == 1.0 ? Icons.flash_on : Icons.nature_people,
+                size: 16,
+                color: colorScheme.primary,
+              ),
+              label: Text(_playbackRate == 1.0 ? '⚡ 1.0x' : '🐢 0.75x'),
+              onPressed: () {
+                setState(() {
+                  _playbackRate = _playbackRate == 1.0 ? 0.75 : 1.0;
+                });
+              },
+            ),
+          ],
+        ),
+      ],
     );
   }
 
@@ -241,7 +391,7 @@ class _PracticeViewState extends State<PracticeView> {
     );
   }
 
-  Widget _buildFlashcard(ColorScheme colorScheme) {
+  Widget _buildFlashcardMode(ColorScheme colorScheme) {
     final v = _studyWords[_currentIndex];
     final maskedSentence = v.userExample != null && v.userExample!.isNotEmpty
         ? SentenceHelper.maskWordInSentence(v.word, v.userExample!)
@@ -250,7 +400,7 @@ class _PracticeViewState extends State<PracticeView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Progress header
+        // Progress header & Swipe Hint
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -270,107 +420,124 @@ class _PracticeViewState extends State<PracticeView> {
               ),
           ],
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
 
-        // Main Flashcard
-        Card(
-          elevation: 2,
-          color: colorScheme.surfaceContainerLow,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-            side: BorderSide(color: colorScheme.primary.withValues(alpha: 0.3)),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              children: [
-                // Front / Hint
-                if (!_isFlipped) ...[
-                  Icon(Icons.help_outline, size: 40, color: colorScheme.secondary),
-                  const SizedBox(height: 16),
-                  if (maskedSentence != null) ...[
-                    const Text('Điền từ thích hợp vào chỗ trống:', style: TextStyle(fontSize: 12)),
-                    const SizedBox(height: 8),
-                    Text(
-                      maskedSentence,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, height: 1.4),
+        // Swipeable Flashcard Container
+        GestureDetector(
+          onHorizontalDragEnd: (details) {
+            if (details.primaryVelocity != null) {
+              if (details.primaryVelocity! < -200) {
+                // Swipe Left -> Forgot (1)
+                _submitReview(1);
+              } else if (details.primaryVelocity! > 200) {
+                // Swipe Right -> Easy (5)
+                _submitReview(5);
+              }
+            }
+          },
+          child: Card(
+            elevation: 2,
+            color: colorScheme.surfaceContainerLow,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+              side: BorderSide(color: colorScheme.primary.withValues(alpha: 0.3)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                children: [
+                  if (!_isFlipped) ...[
+                    Icon(Icons.help_outline, size: 40, color: colorScheme.secondary),
+                    const SizedBox(height: 16),
+                    if (maskedSentence != null) ...[
+                      const Text('Điền từ thích hợp vào chỗ trống:', style: TextStyle(fontSize: 12)),
+                      const SizedBox(height: 8),
+                      Text(
+                        maskedSentence,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, height: 1.4),
+                      ),
+                    ] else ...[
+                      const Text('Định nghĩa của từ:', style: TextStyle(fontSize: 12)),
+                      const SizedBox(height: 8),
+                      Text(
+                        v.definition.isNotEmpty ? v.definition : '(Hãy tự nhớ lại nghĩa của từ)',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                    const SizedBox(height: 24),
+                    FilledButton.tonalIcon(
+                      icon: const Icon(Icons.flip),
+                      label: const Text('Lật thẻ xem đáp án'),
+                      onPressed: () => setState(() => _isFlipped = true),
                     ),
                   ] else ...[
-                    const Text('Định nghĩa của từ:', style: TextStyle(fontSize: 12)),
-                    const SizedBox(height: 8),
                     Text(
-                      v.definition.isNotEmpty ? v.definition : '(Hãy tự nhớ lại nghĩa của từ)',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                  const SizedBox(height: 24),
-                  FilledButton.tonalIcon(
-                    icon: const Icon(Icons.flip),
-                    label: const Text('Lật thẻ xem đáp án'),
-                    onPressed: () => setState(() => _isFlipped = true),
-                  ),
-                ]
-                // Back / Answer
-                else ...[
-                  Text(
-                    v.word,
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: colorScheme.primary,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-
-                  // Audio Buttons
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      if (v.phoneticUk != null)
-                        ActionChip(
-                          avatar: const Icon(Icons.volume_up, size: 16),
-                          label: Text('UK ${v.phoneticUk}'),
-                          onPressed: () => _playAudio(v.audioUrlUk),
-                        ),
-                      const SizedBox(width: 8),
-                      if (v.phoneticUs != null)
-                        ActionChip(
-                          avatar: const Icon(Icons.volume_up, size: 16),
-                          label: Text('US ${v.phoneticUs}'),
-                          onPressed: () => _playAudio(v.audioUrlUs),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  if (v.definition.isNotEmpty)
-                    Text(
-                      v.definition,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
-                    ),
-                  if (v.userExample != null && v.userExample!.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 10.0),
-                      child: Text(
-                        'Ví dụ: "${v.userExample}"',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontStyle: FontStyle.italic,
-                          color: colorScheme.onSurfaceVariant,
-                        ),
+                      v.word,
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: colorScheme.primary,
                       ),
                     ),
+                    const SizedBox(height: 8),
+
+                    // Audio Buttons
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        if (v.phoneticUk != null)
+                          ActionChip(
+                            avatar: const Icon(Icons.volume_up, size: 16),
+                            label: Text('UK ${v.phoneticUk}'),
+                            onPressed: () => _playAudio(v.audioUrlUk, isUk: true),
+                          ),
+                        const SizedBox(width: 8),
+                        if (v.phoneticUs != null)
+                          ActionChip(
+                            avatar: const Icon(Icons.volume_up, size: 16),
+                            label: Text('US ${v.phoneticUs}'),
+                            onPressed: () => _playAudio(v.audioUrlUs, isUk: false),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    if (v.definition.isNotEmpty)
+                      Text(
+                        v.definition,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+                      ),
+                    if (v.userExample != null && v.userExample!.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 10.0),
+                        child: Text(
+                          'Ví dụ: "${v.userExample}"',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontStyle: FontStyle.italic,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                  ],
                 ],
-              ],
+              ),
             ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Center(
+          child: Text(
+            '👈 Vuốt trái: Khó/Quên | Vuốt phải: Dễ/Thuộc 👉',
+            style: TextStyle(fontSize: 11, color: colorScheme.outline),
           ),
         ),
         const SizedBox(height: 16),
 
-        // 3. Sentence Writing & Grammar Check
+        // Sentence Writing & Grammar Check
         Card(
           child: Padding(
             padding: const EdgeInsets.all(16.0),
@@ -427,10 +594,10 @@ class _PracticeViewState extends State<PracticeView> {
         ),
         const SizedBox(height: 16),
 
-        // 4. SRS Rating Buttons
+        // SRS Rating Buttons
         if (_isFlipped) ...[
           const Text(
-            'Bạn nhớ từ này như thế nào? (SuperMemo SM-2):',
+            'Đánh giá mức độ nhớ (SuperMemo SM-2):',
             textAlign: TextAlign.center,
             style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
           ),
@@ -477,6 +644,158 @@ class _PracticeViewState extends State<PracticeView> {
                 ),
               ),
             ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildQuizMode(ColorScheme colorScheme) {
+    final v = _studyWords[_currentIndex];
+    final correctDef = v.definition.isNotEmpty ? v.definition : 'Từ vựng: ${v.word}';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Progress header
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Câu hỏi ${_currentIndex + 1} / ${_studyWords.length}',
+              style: TextStyle(fontWeight: FontWeight.bold, color: colorScheme.primary),
+            ),
+            Chip(
+              label: const Text('Quiz Mode 🎯', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+              backgroundColor: colorScheme.secondaryContainer,
+              labelStyle: TextStyle(color: colorScheme.onSecondaryContainer),
+              visualDensity: VisualDensity.compact,
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        // Question Card
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              children: [
+                Text(
+                  'Từ vựng nào có nghĩa tương ứng?',
+                  style: TextStyle(fontSize: 13, color: colorScheme.outline),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  v.word,
+                  style: TextStyle(
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold,
+                    color: colorScheme.primary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (v.phoneticUk != null)
+                      ActionChip(
+                        avatar: const Icon(Icons.volume_up, size: 16),
+                        label: Text('UK ${v.phoneticUk}'),
+                        onPressed: () => _playAudio(v.audioUrlUk, isUk: true),
+                      ),
+                    const SizedBox(width: 8),
+                    if (v.phoneticUs != null)
+                      ActionChip(
+                        avatar: const Icon(Icons.volume_up, size: 16),
+                        label: Text('US ${v.phoneticUs}'),
+                        onPressed: () => _playAudio(v.audioUrlUs, isUk: false),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // 4 Options
+        ..._quizOptions.asMap().entries.map((entry) {
+          final idx = entry.key;
+          final option = entry.value;
+
+          Color btnColor = colorScheme.surfaceContainerHigh;
+          Color textColor = colorScheme.onSurface;
+
+          if (_quizAnswered) {
+            if (option == correctDef) {
+              btnColor = Colors.green.shade100;
+              textColor = Colors.green.shade900;
+            } else if (_selectedQuizIndex == idx) {
+              btnColor = colorScheme.errorContainer;
+              textColor = colorScheme.onErrorContainer;
+            }
+          }
+
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10.0),
+            child: InkWell(
+              onTap: () => _handleQuizSelection(idx),
+              borderRadius: BorderRadius.circular(16),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: btnColor,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: _quizAnswered && option == correctDef
+                        ? Colors.green.shade600
+                        : colorScheme.outlineVariant,
+                    width: _quizAnswered && option == correctDef ? 2 : 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 14,
+                      backgroundColor: colorScheme.primaryContainer,
+                      child: Text(
+                        String.fromCharCode(65 + idx),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: colorScheme.onPrimaryContainer,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        option,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: textColor,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }),
+
+        if (_quizAnswered) ...[
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              icon: const Icon(Icons.arrow_forward),
+              label: const Text('Câu hỏi tiếp theo'),
+              onPressed: _nextWord,
+            ),
           ),
         ],
       ],

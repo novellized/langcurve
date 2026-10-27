@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:sqflite/sqflite.dart';
 import '../../../core/database/database_helper.dart';
+import '../../../core/services/audio_service.dart';
 import '../../translation/services/translation_service.dart';
 import '../models/dictionary_entry.dart';
 import 'cefr_classifier.dart';
@@ -11,6 +12,12 @@ class DictionaryService {
   final http.Client _client;
   final DatabaseHelper _dbHelper;
   final TranslationService _translationService;
+
+  static const Map<String, String> _headers = {
+    'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': '*/*',
+  };
 
   DictionaryService({
     http.Client? client,
@@ -39,11 +46,11 @@ class DictionaryService {
       return cached;
     }
 
-    // 3. Fetch from External API (Free Dictionary API)
+    // 3. Fetch from External API (Free Dictionary API) with User-Agent
     DictionaryEntry? entry;
     try {
       final url = Uri.parse('https://api.dictionaryapi.dev/api/v2/entries/en/${Uri.encodeComponent(lemma)}');
-      final response = await _client.get(url).timeout(const Duration(seconds: 8));
+      final response = await _client.get(url, headers: _headers).timeout(const Duration(seconds: 8));
 
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body);
@@ -57,8 +64,8 @@ class DictionaryService {
       // API error or offline - continue to TTS fallback
     }
 
-    // 4. Fallback to Google TTS if word not found in external dictionary
-    entry ??= _createGoogleTtsFallback(lemma);
+    // 4. Fallback entry if word not found in external dictionary or network down
+    entry ??= await _createFallbackEntry(lemma);
 
     // 5. Enrich with Vietnamese translations
     if (autoTranslate) {
@@ -66,7 +73,9 @@ class DictionaryService {
       // Translate first definition of each meaning
       for (final m in entry.meanings) {
         for (final d in m.definitions.take(2)) {
-          d.translatedDefinition = await _translationService.translateEnToVi(d.definition);
+          if (d.definition.isNotEmpty && d.definition != 'Định nghĩa đang được cập nhật.') {
+            d.translatedDefinition = await _translationService.translateEnToVi(d.definition);
+          }
         }
       }
     }
@@ -74,7 +83,7 @@ class DictionaryService {
     return entry;
   }
 
-  /// Parses Free Dictionary API response into DictionaryEntry with dual UK/US audio
+  /// Parses Free Dictionary API response into DictionaryEntry with normalized dual UK/US audio
   DictionaryEntry _parseFreeDictionaryEntry(Map<String, dynamic> raw, String lemma) {
     String phoneticUk = '';
     String audioUrlUk = '';
@@ -102,7 +111,7 @@ class DictionaryService {
       }
     }
 
-    // Secondary fill if missing audio
+    // Secondary fill if missing audio from specific UK/US markers
     if (audioUrlUk.isEmpty || audioUrlUs.isEmpty) {
       for (final p in phonetics) {
         if (p is Map && (p['audio'] ?? '').toString().isNotEmpty) {
@@ -119,16 +128,12 @@ class DictionaryService {
       }
     }
 
-    // Google TTS Fallback for missing UK or US audio
-    if (audioUrlUk.isEmpty) {
-      audioUrlUk = 'https://translate.google.com/translate_tts?ie=UTF-8&tl=en-GB&client=tw-ob&q=${Uri.encodeComponent(lemma)}&dialect=-uk';
-    }
-    if (audioUrlUs.isEmpty) {
-      audioUrlUs = 'https://translate.google.com/translate_tts?ie=UTF-8&tl=en-US&client=tw-ob&q=${Uri.encodeComponent(lemma)}&dialect=-us';
-    }
+    // Normalize audio URLs
+    audioUrlUk = _normalizeAudioUrl(audioUrlUk, lemma, isUk: true);
+    audioUrlUs = _normalizeAudioUrl(audioUrlUs, lemma, isUk: false);
 
     if (phoneticUk.isEmpty) phoneticUk = (raw['phonetic'] ?? '').toString();
-    if (phoneticUs.isEmpty) phoneticUs = phoneticUk;
+    if (phoneticUs.isEmpty) phoneticUs = phoneticUk.isNotEmpty ? phoneticUk : '/$lemma/';
 
     // Parse meanings
     final List<Meaning> meaningsList = [];
@@ -170,7 +175,7 @@ class DictionaryService {
 
     return DictionaryEntry(
       word: lemma,
-      phonetic: phoneticUk.isNotEmpty ? phoneticUk : (raw['phonetic'] ?? '').toString(),
+      phonetic: phoneticUk.isNotEmpty ? phoneticUk : (raw['phonetic'] ?? '/$lemma/').toString(),
       phoneticUk: phoneticUk,
       audioUrlUk: audioUrlUk,
       phoneticUs: phoneticUs,
@@ -182,24 +187,40 @@ class DictionaryService {
     );
   }
 
-  /// Create Google TTS fallback entry when external dictionary API fails
-  DictionaryEntry _createGoogleTtsFallback(String lemma) {
-    final audioUk = 'https://translate.google.com/translate_tts?ie=UTF-8&tl=en-GB&client=tw-ob&q=${Uri.encodeComponent(lemma)}&dialect=-uk';
-    final audioUs = 'https://translate.google.com/translate_tts?ie=UTF-8&tl=en-US&client=tw-ob&q=${Uri.encodeComponent(lemma)}&dialect=-us';
+  String _normalizeAudioUrl(String rawAudio, String lemma, {required bool isUk}) {
+    var clean = rawAudio.trim();
+    if (clean.isEmpty || clean.contains('api.dictionaryapi.dev/media/pronunciations/')) {
+      // Use Google Static Sounds CDN (100% reliable 200 OK)
+      return AudioService.getFallbackTtsUrl(lemma, isUk: isUk);
+    }
+    if (clean.startsWith('//')) {
+      clean = 'https:$clean';
+    }
+    return clean;
+  }
+
+  /// Create fallback entry when external dictionary API fails
+  Future<DictionaryEntry> _createFallbackEntry(String lemma) async {
+    final audioUk = AudioService.getFallbackTtsUrl(lemma, isUk: true);
+    final audioUs = AudioService.getFallbackTtsUrl(lemma, isUk: false);
+    final viMeaning = await _translationService.translateEnToVi(lemma);
 
     return DictionaryEntry(
       word: lemma,
       phonetic: '/$lemma/',
-      phoneticUk: '/uk/',
+      phoneticUk: '/$lemma/',
       audioUrlUk: audioUk,
-      phoneticUs: '/us/',
+      phoneticUs: '/$lemma/',
       audioUrlUs: audioUs,
+      vietnameseMeaning: viMeaning,
       meanings: [
         Meaning(
           partOfSpeech: 'vocabulary',
           definitions: [
             DefinitionItem(
-              definition: 'Định nghĩa đang được cập nhật (Google TTS Fallback).',
+              definition: viMeaning != null && viMeaning.isNotEmpty
+                  ? 'Nghĩa tiếng Việt: $viMeaning'
+                  : 'Từ vựng tiếng Anh cơ bản.',
               example: '',
             ),
           ],

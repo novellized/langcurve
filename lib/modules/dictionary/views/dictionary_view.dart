@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:audioplayers/audioplayers.dart';
+import '../../../core/services/audio_service.dart';
 import '../services/dictionary_service.dart';
 import '../models/dictionary_entry.dart';
 import '../../notebook/repositories/notebook_repository.dart';
@@ -19,7 +19,7 @@ class _DictionaryViewState extends State<DictionaryView> {
   final TextEditingController _searchController = TextEditingController();
   final DictionaryService _dictionaryService = DictionaryService();
   final NotebookRepository _notebookRepo = NotebookRepository();
-  final AudioPlayer _audioPlayer = AudioPlayer();
+  final AudioService _audioService = AudioService();
 
   DictionaryEntry? _entry;
   bool _isLoading = false;
@@ -37,7 +37,7 @@ class _DictionaryViewState extends State<DictionaryView> {
   @override
   void dispose() {
     _searchController.dispose();
-    _audioPlayer.dispose();
+    _audioService.dispose();
     super.dispose();
   }
 
@@ -69,12 +69,11 @@ class _DictionaryViewState extends State<DictionaryView> {
     }
   }
 
-  Future<void> _playAudio(String? url) async {
-    if (url == null || url.isEmpty) return;
+  Future<void> _playAudio(String? url, {required bool isUk}) async {
+    if (_entry == null) return;
     try {
-      await _audioPlayer.stop();
-      await _audioPlayer.play(UrlSource(url));
-    } catch (e) {
+      await _audioService.playWordAudio(url, _entry!.word, isUk: isUk);
+    } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Không thể phát âm thanh này.')),
@@ -375,13 +374,13 @@ class _DictionaryViewState extends State<DictionaryView> {
                   ActionChip(
                     avatar: const Icon(Icons.volume_up, size: 18),
                     label: Text('🇬🇧 UK ${entry.phoneticUk}'),
-                    onPressed: () => _playAudio(entry.audioUrlUk),
+                    onPressed: () => _playAudio(entry.audioUrlUk, isUk: true),
                   ),
                 if (entry.phoneticUs != null && entry.phoneticUs!.isNotEmpty)
                   ActionChip(
                     avatar: const Icon(Icons.volume_up, size: 18),
                     label: Text('🇺🇸 US ${entry.phoneticUs}'),
-                    onPressed: () => _playAudio(entry.audioUrlUs),
+                    onPressed: () => _playAudio(entry.audioUrlUs, isUk: false),
                   ),
               ],
             ),

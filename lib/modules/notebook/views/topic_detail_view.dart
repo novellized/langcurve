@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:audioplayers/audioplayers.dart';
+import '../../../core/services/audio_service.dart';
 import '../models/topic.dart';
 import '../models/vocabulary.dart';
 import '../repositories/notebook_repository.dart';
@@ -20,7 +20,7 @@ class TopicDetailView extends StatefulWidget {
 
 class _TopicDetailViewState extends State<TopicDetailView> {
   final NotebookRepository _notebookRepo = NotebookRepository();
-  final AudioPlayer _audioPlayer = AudioPlayer();
+  final AudioService _audioService = AudioService();
   List<Vocabulary> _vocabularies = [];
   bool _isLoading = true;
 
@@ -32,7 +32,7 @@ class _TopicDetailViewState extends State<TopicDetailView> {
 
   @override
   void dispose() {
-    _audioPlayer.dispose();
+    _audioService.dispose();
     super.dispose();
   }
 
@@ -47,11 +47,9 @@ class _TopicDetailViewState extends State<TopicDetailView> {
     }
   }
 
-  Future<void> _playAudio(String? url) async {
-    if (url == null || url.isEmpty) return;
+  Future<void> _playAudio(String? url, String word, {required bool isUk}) async {
     try {
-      await _audioPlayer.stop();
-      await _audioPlayer.play(UrlSource(url));
+      await _audioService.playWordAudio(url, word, isUk: isUk);
     } catch (_) {}
   }
 
@@ -166,7 +164,7 @@ class _TopicDetailViewState extends State<TopicDetailView> {
                                   children: [
                                     if (v.phoneticUk != null) ...[
                                       InkWell(
-                                        onTap: () => _playAudio(v.audioUrlUk),
+                                        onTap: () => _playAudio(v.audioUrlUk, v.word, isUk: true),
                                         child: Row(
                                           children: [
                                             const Icon(Icons.volume_up, size: 16),
@@ -179,7 +177,7 @@ class _TopicDetailViewState extends State<TopicDetailView> {
                                     ],
                                     if (v.phoneticUs != null) ...[
                                       InkWell(
-                                        onTap: () => _playAudio(v.audioUrlUs),
+                                        onTap: () => _playAudio(v.audioUrlUs, v.word, isUk: false),
                                         child: Row(
                                           children: [
                                             const Icon(Icons.volume_up, size: 16),

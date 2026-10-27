@@ -21,7 +21,6 @@ class DatabaseHelper {
   }
 
   Future<Database> _initDB(String filePath) async {
-    // Enable FFI on desktop platforms (Windows, Linux, macOS) or in test environments
     if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
       sqfliteFfiInit();
       databaseFactory = databaseFactoryFfi;
@@ -38,8 +37,9 @@ class DatabaseHelper {
 
     return await openDatabase(
       dbPath,
-      version: 1,
+      version: 2,
       onCreate: _createDB,
+      onUpgrade: _onUpgrade,
       onConfigure: _configureDB,
     );
   }
@@ -98,12 +98,15 @@ class DatabaseHelper {
       )
     ''');
 
-    // 4. User profile & XP table
+    // 4. User profile, XP, Streak & Daily Goal table
     await db.execute('''
       CREATE TABLE user_profile (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         xp INTEGER DEFAULT 0,
-        email TEXT
+        email TEXT,
+        streak_count INTEGER DEFAULT 0,
+        last_study_date TEXT,
+        daily_goal INTEGER DEFAULT 10
       )
     ''');
 
@@ -135,8 +138,19 @@ class DatabaseHelper {
     await db.insert('user_profile', {
       'id': 1,
       'xp': 0,
-      'email': 'guest@langcurve.local'
+      'email': 'guest@langcurve.local',
+      'streak_count': 0,
+      'last_study_date': null,
+      'daily_goal': 10
     });
+  }
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute('ALTER TABLE user_profile ADD COLUMN streak_count INTEGER DEFAULT 0');
+      await db.execute('ALTER TABLE user_profile ADD COLUMN last_study_date TEXT');
+      await db.execute('ALTER TABLE user_profile ADD COLUMN daily_goal INTEGER DEFAULT 10');
+    }
   }
 
   Future<void> close() async {

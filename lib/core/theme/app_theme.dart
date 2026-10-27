@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 
 class AppTheme {
-  // Material Design 3 Light ColorScheme (from user specification)
+  // Material Design 3 Light ColorScheme
   static const ColorScheme lightColorScheme = ColorScheme(
     brightness: Brightness.light,
     primary: Color(0xFF336B23),
@@ -31,7 +32,7 @@ class AppTheme {
     surfaceContainerHighest: Color(0xFFE3E3DC),
   );
 
-  // Material Design 3 Dark ColorScheme (aligned with light palette)
+  // Material Design 3 Dark ColorScheme
   static const ColorScheme darkColorScheme = ColorScheme(
     brightness: Brightness.dark,
     primary: Color(0xFF98D781),
@@ -61,31 +62,49 @@ class AppTheme {
     surfaceContainerHighest: Color(0xFF333630),
   );
 
+  static final pageTransitions = PageTransitionsTheme(
+    builders: {
+      TargetPlatform.android: const ZoomPageTransitionsBuilder(),
+      TargetPlatform.iOS: const CupertinoPageTransitionsBuilder(),
+      TargetPlatform.linux: const FadeUpwardsPageTransitionsBuilder(),
+      TargetPlatform.macOS: const CupertinoPageTransitionsBuilder(),
+      TargetPlatform.windows: const FadeUpwardsPageTransitionsBuilder(),
+    },
+  );
+
   static ThemeData lightTheme = ThemeData(
     useMaterial3: true,
     colorScheme: lightColorScheme,
     scaffoldBackgroundColor: lightColorScheme.surface,
+    pageTransitionsTheme: pageTransitions,
     cardTheme: CardThemeData(
       elevation: 0,
       color: lightColorScheme.surfaceContainerLow,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         side: BorderSide(color: lightColorScheme.outlineVariant.withValues(alpha: 0.5)),
       ),
+    ),
+    dialogTheme: DialogThemeData(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      backgroundColor: lightColorScheme.surfaceContainerHigh,
+    ),
+    chipTheme: ChipThemeData(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: lightColorScheme.surfaceContainer,
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         borderSide: BorderSide(color: lightColorScheme.outlineVariant),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         borderSide: BorderSide(color: lightColorScheme.outlineVariant),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         borderSide: BorderSide(color: lightColorScheme.primary, width: 2),
       ),
     ),
@@ -110,27 +129,35 @@ class AppTheme {
     useMaterial3: true,
     colorScheme: darkColorScheme,
     scaffoldBackgroundColor: darkColorScheme.surface,
+    pageTransitionsTheme: pageTransitions,
     cardTheme: CardThemeData(
       elevation: 0,
       color: darkColorScheme.surfaceContainerLow,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         side: BorderSide(color: darkColorScheme.outlineVariant.withValues(alpha: 0.5)),
       ),
+    ),
+    dialogTheme: DialogThemeData(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      backgroundColor: darkColorScheme.surfaceContainerHigh,
+    ),
+    chipTheme: ChipThemeData(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: darkColorScheme.surfaceContainer,
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         borderSide: BorderSide(color: darkColorScheme.outlineVariant),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         borderSide: BorderSide(color: darkColorScheme.outlineVariant),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         borderSide: BorderSide(color: darkColorScheme.primary, width: 2),
       ),
     ),

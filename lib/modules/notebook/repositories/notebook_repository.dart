@@ -30,15 +30,129 @@ class NotebookRepository {
         ) ??
         0;
 
-    final userRow = await db.query('user_profile', where: 'id = ?', whereArgs: [1]);
-    final xp = userRow.isNotEmpty ? (userRow.first['xp'] as int? ?? 0) : 0;
+    final profile = await getUserProfile();
 
     return {
       'total_topics': topicsCount,
       'total_words': distinctWordsCount,
       'total_examples': examplesCount,
-      'xp': xp,
+      'xp': profile['xp'] as int,
+      'streak_count': profile['streak_count'] as int,
+      'daily_goal': profile['daily_goal'] as int,
+      'today_reviewed_count': profile['today_reviewed_count'] as int,
     };
+  }
+
+  /// Get user profile (XP, Streak, Daily Goal, Today progress)
+  Future<Map<String, dynamic>> getUserProfile() async {
+    final db = await _db;
+    final userRow = await db.query('user_profile', where: 'id = ?', whereArgs: [1]);
+    if (userRow.isEmpty) {
+      return {
+        'xp': 0,
+        'streak_count': 0,
+        'last_study_date': null,
+        'daily_goal': 10,
+        'today_reviewed_count': 0,
+      };
+    }
+
+    final row = userRow.first;
+    final xp = (row['xp'] as int?) ?? 0;
+    var streak = (row['streak_count'] as int?) ?? 0;
+    final lastDateStr = row['last_study_date'] as String?;
+    final dailyGoal = (row['daily_goal'] as int?) ?? 10;
+
+    // Check if streak is broken (more than 1 day missed)
+    final todayStr = _formatDate(DateTime.now());
+    if (lastDateStr != null && lastDateStr.isNotEmpty) {
+      final lastDate = DateTime.tryParse(lastDateStr);
+      if (lastDate != null) {
+        final diffDays = DateTime.now().difference(DateTime(lastDate.year, lastDate.month, lastDate.day)).inDays;
+        if (diffDays > 1) {
+          streak = 0; // Streak broken
+          await db.update('user_profile', {'streak_count': 0}, where: 'id = ?', whereArgs: [1]);
+        }
+      }
+    }
+
+    final todayReviewedCount = await getTodayReviewedCount();
+
+    return {
+      'xp': xp,
+      'streak_count': streak,
+      'last_study_date': lastDateStr,
+      'daily_goal': dailyGoal,
+      'today_reviewed_count': todayReviewedCount,
+    };
+  }
+
+  /// Records study activity today and updates daily Streak 🔥
+  Future<int> recordStudySession() async {
+    final db = await _db;
+    final profile = await getUserProfile();
+    final todayStr = _formatDate(DateTime.now());
+    final lastDateStr = profile['last_study_date'] as String?;
+    int streak = profile['streak_count'] as int;
+
+    if (lastDateStr == todayStr) {
+      // Already recorded today
+      return streak;
+    }
+
+    if (lastDateStr != null && lastDateStr.isNotEmpty) {
+      final lastDate = DateTime.tryParse(lastDateStr);
+      if (lastDate != null) {
+        final yesterday = DateTime.now().subtract(const Duration(days: 1));
+        final yesterdayStr = _formatDate(yesterday);
+        if (lastDateStr == yesterdayStr) {
+          streak += 1; // Consecutive day!
+        } else {
+          streak = 1; // Restart streak
+        }
+      } else {
+        streak = 1;
+      }
+    } else {
+      streak = 1; // First day streak
+    }
+
+    await db.update(
+      'user_profile',
+      {
+        'streak_count': streak,
+        'last_study_date': todayStr,
+      },
+      where: 'id = ?',
+      whereArgs: [1],
+    );
+
+    return streak;
+  }
+
+  /// Get count of reviews logged today
+  Future<int> getTodayReviewedCount() async {
+    final db = await _db;
+    final todayStr = _formatDate(DateTime.now());
+    final count = Sqflite.firstIntValue(
+          await db.rawQuery(
+            "SELECT COUNT(*) FROM review_logs WHERE created_at LIKE ?",
+            ['$todayStr%'],
+          ),
+        ) ??
+        0;
+    return count;
+  }
+
+  /// Update daily goal
+  Future<void> updateDailyGoal(int newGoal) async {
+    final db = await _db;
+    await db.update(
+      'user_profile',
+      {'daily_goal': newGoal},
+      where: 'id = ?',
+      whereArgs: [1],
+    );
   }
 
   /// Get all topics with their vocabulary count
@@ -167,5 +281,12 @@ class NotebookRepository {
       whereArgs: [1],
     );
     return newXp;
+  }
+
+  String _formatDate(DateTime dt) {
+    final y = dt.year.toString().padLeft(4, '0');
+    final m = dt.month.toString().padLeft(2, '0');
+    final d = dt.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
   }
 }
