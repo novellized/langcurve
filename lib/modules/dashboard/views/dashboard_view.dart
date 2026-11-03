@@ -172,6 +172,8 @@ class _DashboardViewState extends State<DashboardView> {
                     const SizedBox(height: 4),
                     Text(
                       'Duy trì thói quen học từ vựng cùng LangCurve.',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 13,
                         color: colorScheme.onPrimaryContainer.withValues(alpha: 0.8),
@@ -180,10 +182,11 @@ class _DashboardViewState extends State<DashboardView> {
                   ],
                 ),
               ),
+              const SizedBox(width: 8),
 
               // Streak Badge
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
                   color: Colors.orange.shade100,
                   borderRadius: BorderRadius.circular(30),
@@ -192,13 +195,13 @@ class _DashboardViewState extends State<DashboardView> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text('🔥', style: TextStyle(fontSize: 18)),
+                    const Text('🔥', style: TextStyle(fontSize: 16)),
                     const SizedBox(width: 4),
                     Text(
                       '$streak ngày',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        fontSize: 13,
+                        fontSize: 12,
                         color: Colors.orange.shade900,
                       ),
                     ),
@@ -213,19 +216,24 @@ class _DashboardViewState extends State<DashboardView> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  const Text('🎯', style: TextStyle(fontSize: 16)),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Mục tiêu hôm nay: $todayCount/$dailyGoal từ',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: colorScheme.onPrimaryContainer,
+              Expanded(
+                child: Row(
+                  children: [
+                    const Text('🎯', style: TextStyle(fontSize: 16)),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Mục tiêu hôm nay: $todayCount/$dailyGoal từ',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: colorScheme.onPrimaryContainer,
+                        ),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
               InkWell(
                 onTap: _showEditDailyGoalDialog,
@@ -439,14 +447,18 @@ class _DashboardViewState extends State<DashboardView> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              'Đường cong học tập (Curve Analytics)',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: colorScheme.onSurface,
+            Expanded(
+              child: Text(
+                'Đường cong học tập (Curve Analytics)',
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: colorScheme.onSurface,
+                ),
               ),
             ),
+            const SizedBox(width: 8),
             Text(
               'SuperMemo SM-2',
               style: TextStyle(fontSize: 12, color: colorScheme.primary),
@@ -530,21 +542,25 @@ class _DashboardViewState extends State<DashboardView> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Row(
-              children: [
-                const Icon(Icons.ondemand_video, size: 20, color: Colors.red),
-                const SizedBox(width: 8),
-                Text(
-                  'Bài học BBC Learning English mới nhất',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: colorScheme.onSurface,
+            Expanded(
+              child: Row(
+                children: [
+                  const Icon(Icons.ondemand_video, size: 20, color: Colors.red),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Bài học BBC Learning English mới nhất',
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: colorScheme.onSurface,
+                      ),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
             IconButton(
               icon: const Icon(Icons.refresh, size: 18),
@@ -554,59 +570,81 @@ class _DashboardViewState extends State<DashboardView> {
           ],
         ),
         const SizedBox(height: 12),
-        ListView.separated(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: _videos.length,
-          separatorBuilder: (_, _) => const SizedBox(height: 10),
-          itemBuilder: (context, index) {
-            final video = _videos[index];
-            return Card(
-              child: ListTile(
-                contentPadding: const EdgeInsets.all(12),
-                leading: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.network(
-                    'https://img.youtube.com/vi/${video.id}/hqdefault.jpg',
-                    width: 80,
-                    height: 60,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => Container(
+        if (_videos.isEmpty)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Center(
+                child: Column(
+                  children: [
+                    Icon(Icons.video_library, size: 40, color: colorScheme.outline),
+                    const SizedBox(height: 8),
+                    const Text('Chưa có bài học BBC mới.'),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.refresh, size: 16),
+                      label: const Text('Thử kết nối lại'),
+                      onPressed: () => _loadDashboardData(forceRefreshVideos: true),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          )
+        else
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _videos.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 10),
+            itemBuilder: (context, index) {
+              final video = _videos[index];
+              return Card(
+                child: ListTile(
+                  contentPadding: const EdgeInsets.all(12),
+                  leading: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.network(
+                      'https://img.youtube.com/vi/${video.id}/hqdefault.jpg',
                       width: 80,
                       height: 60,
-                      color: colorScheme.surfaceContainerHighest,
-                      child: const Icon(Icons.video_library),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => Container(
+                        width: 80,
+                        height: 60,
+                        color: colorScheme.surfaceContainerHighest,
+                        child: const Icon(Icons.video_library),
+                      ),
                     ),
                   ),
-                ),
-                title: Text(
-                  video.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                ),
-                subtitle: Padding(
-                  padding: const EdgeInsets.only(top: 4.0),
-                  child: Text(
-                    video.desc,
+                  title: Text(
+                    video.title,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 11, color: colorScheme.outline),
+                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                   ),
+                  subtitle: Padding(
+                    padding: const EdgeInsets.only(top: 4.0),
+                    child: Text(
+                      video.desc,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 11, color: colorScheme.outline),
+                    ),
+                  ),
+                  trailing: const Icon(Icons.open_in_new, size: 18),
+                  onTap: () async {
+                    final launched = await BbcVideoSyncService.openVideo(video.id);
+                    if (!launched && context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Không thể mở video ${video.title}')),
+                      );
+                    }
+                  },
                 ),
-                trailing: const Icon(Icons.open_in_new, size: 18),
-                onTap: () async {
-                  final launched = await BbcVideoSyncService.openVideo(video.id);
-                  if (!launched && context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Không thể mở video ${video.title}')),
-                    );
-                  }
-                },
-              ),
-            );
-          },
-        ),
+              );
+            },
+          ),
       ],
     );
   }

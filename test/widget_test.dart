@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:langcurve/core/database/database_helper.dart';
+import 'package:langcurve/presentation/home_scaffold.dart';
 import 'package:langcurve/main.dart';
 
 void main() {
@@ -57,7 +58,10 @@ void main() {
       CREATE TABLE user_profile (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         xp INTEGER DEFAULT 0,
-        email TEXT
+        email TEXT,
+        streak_count INTEGER DEFAULT 0,
+        last_study_date TEXT,
+        daily_goal INTEGER DEFAULT 10
       )
     ''');
     await db.execute('''
@@ -79,6 +83,6 @@ void main() {
   testWidgets('LangCurveApp smoke test', (WidgetTester tester) async {
     await tester.pumpWidget(const LangCurveApp());
     await tester.pump(const Duration(seconds: 15));
-    expect(find.text('LangCurve'), findsOneWidget);
+    expect(find.byType(AdaptiveHomeScaffold), findsOneWidget);
   });
 }

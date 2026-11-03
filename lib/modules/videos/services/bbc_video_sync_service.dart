@@ -2,50 +2,35 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:xml/xml.dart';
 import '../models/bbc_video_item.dart';
 
 class BbcVideoSyncService {
   final http.Client _client;
   SharedPreferences? _prefs;
 
-  static const String rssUrl =
-      'https://www.youtube.com/feeds/videos.xml?playlist_id=UULFHaHD477h-FeBbVh9Sh7syA';
-
+  static const String _channelPageUrl = 'https://www.youtube.com/@bbclearningenglish/videos';
   static const String _prefCacheKey = 'bbc_videos_cache_json';
   static const String _prefSyncTimeKey = 'bbc_videos_last_sync_time';
   static const Duration syncInterval = Duration(hours: 1);
 
-  static final List<BbcVideoItem> fallbackVideos = [
-    BbcVideoItem(
-      id: 'ut3b9qDHvEQ',
-      title: 'Children in war zones ⏲️ 6 Minute English - BBC Learning English',
-      desc: 'Khoa học từ vựng và chủ đề thời sự qua góc nhìn báo chí từ chương trình 6 Minute English của BBC.',
-    ),
-    BbcVideoItem(
-      id: 'qRsLwL9lJQg',
-      title: 'Social Media & News - BBC Learning English from the News',
-      desc: 'Bản tin tiếng Anh phân tích xu hướng truyền thông với từ vựng chuẩn khung tham chiếu Châu Âu CEFR.',
-    ),
-    BbcVideoItem(
-      id: 'wDFV1sZo1gY',
-      title: 'Beating Speaking Anxiety - BBC Learning English Class',
-      desc: 'Phương pháp vượt qua tâm lý e ngại khi giao tiếp tiếng Anh trực tiếp với giáo viên bản ngữ BBC.',
-    ),
-  ];
+  static const Map<String, String> _headers = {
+    'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept-Language': 'en-US,en;q=0.9',
+  };
 
-  BbcVideoSyncService({http.Client? client, SharedPreferences? prefs})
-      : _client = client ?? http.Client(),
-        _prefs = prefs;
+  BbcVideoSyncService({http.Client? client, this._prefs})
+      : _client = client ?? http.Client();
 
   Future<SharedPreferences> _getPrefs() async {
-    if (_prefs != null) return _prefs!;
-    _prefs = await SharedPreferences.getInstance();
-    return _prefs!;
+    final currentPrefs = _prefs;
+    if (currentPrefs != null) return currentPrefs;
+    final instance = await SharedPreferences.getInstance();
+    _prefs = instance;
+    return instance;
   }
 
-  /// Fetches BBC Learning English videos with a 1-hour cache policy.
-  /// Automatically re-syncs every 1 hour (or when [forceRefresh] is true).
+  /// Fetches live BBC Learning English videos dynamically with a 1-hour cache policy.
   Future<List<BbcVideoItem>> fetchVideos({bool forceRefresh = false}) async {
     final prefs = await _getPrefs();
 
@@ -71,53 +56,26 @@ class BbcVideoSyncService {
       }
     }
 
-    // Fetch fresh RSS feed from YouTube
+    // Live scrape latest video IDs from BBC channel page
     try {
-      final response = await _client.get(Uri.parse(rssUrl)).timeout(const Duration(seconds: 8));
+      final response =
+          await _client.get(Uri.parse(_channelPageUrl), headers: _headers).timeout(const Duration(seconds: 8));
       if (response.statusCode == 200) {
-        final document = XmlDocument.parse(response.body);
-        final entries = document.findAllElements('entry');
+        final html = response.body;
+        final reg = RegExp(r'"videoId":"([a-zA-Z0-9_-]{11})"');
+        final videoIds = reg.allMatches(html).map((m) => m.group(1)!).toSet().toList();
 
         final List<BbcVideoItem> fetchedList = [];
-        for (final entry in entries.take(6)) {
-          final videoIdElem = entry.findElements('yt:videoId');
-          final titleElem = entry.findElements('title');
-          final mediaGroup = entry.findElements('media:group');
-
-          if (videoIdElem.isNotEmpty && titleElem.isNotEmpty) {
-            final id = videoIdElem.first.innerText.trim();
-            final rawTitle = titleElem.first.innerText.trim();
-            final title = _unescapeXml(rawTitle);
-
-            String desc = '';
-            if (mediaGroup.isNotEmpty) {
-              final descElem = mediaGroup.first.findElements('media:description');
-              if (descElem.isNotEmpty) {
-                desc = descElem.first.innerText.trim();
-              }
-            }
-
-            final cleanDesc = desc
-                .split('\n')
-                .first
-                .replaceAll(RegExp(r'http\S+'), '')
-                .trim();
-
-            fetchedList.add(BbcVideoItem(
-              id: id,
-              title: title,
-              desc: cleanDesc.isNotEmpty
-                  ? (cleanDesc.length > 130 ? '${cleanDesc.substring(0, 130)}...' : cleanDesc)
-                  : 'Video bài học tiếng Anh từ kênh BBC Learning English.',
-              publishedAt: entry.findElements('published').isNotEmpty
-                  ? entry.findElements('published').first.innerText
-                  : null,
-            ));
-          }
+        for (final id in videoIds.take(6)) {
+          final title = await _fetchVideoTitle(id);
+          fetchedList.add(BbcVideoItem(
+            id: id,
+            title: title ?? 'BBC Learning English - Bài học mới',
+            desc: 'Video bài học tiếng Anh truyền thông từ BBC Learning English.',
+          ));
         }
 
         if (fetchedList.isNotEmpty) {
-          // Update cache & sync timestamp
           final encoded = jsonEncode(fetchedList.map((e) => e.toMap()).toList());
           await prefs.setString(_prefCacheKey, encoded);
           await prefs.setInt(_prefSyncTimeKey, now.millisecondsSinceEpoch);
@@ -128,7 +86,7 @@ class BbcVideoSyncService {
       // Fall through
     }
 
-    // Fallback if network failed: try returning old cache if present
+    // Return cached list if available
     final cachedJson = prefs.getString(_prefCacheKey);
     if (cachedJson != null && cachedJson.isNotEmpty) {
       try {
@@ -141,10 +99,24 @@ class BbcVideoSyncService {
       } catch (_) {}
     }
 
-    return fallbackVideos;
+    return [];
   }
 
-  /// Opens video in YouTube App if available, or falls back to Web Browser (e.g. Waydroid browser)
+  Future<String?> _fetchVideoTitle(String videoId) async {
+    try {
+      final url = Uri.parse('https://noembed.com/embed?url=https://www.youtube.com/watch?v=$videoId');
+      final res = await _client.get(url).timeout(const Duration(seconds: 4));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        if (data is Map && data['title'] != null) {
+          return data['title'].toString();
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Opens video in YouTube App if available, or falls back to Web Browser
   static Future<bool> openVideo(String videoId) async {
     final cleanId = videoId.trim();
     if (cleanId.isEmpty) return false;
@@ -152,7 +124,6 @@ class BbcVideoSyncService {
     final appUri = Uri.parse('vnd.youtube:$cleanId');
     final webUri = Uri.parse('https://www.youtube.com/watch?v=$cleanId');
 
-    // 1. Try YouTube app scheme first
     try {
       if (await canLaunchUrl(appUri)) {
         final launchedApp = await launchUrl(
@@ -163,7 +134,6 @@ class BbcVideoSyncService {
       }
     } catch (_) {}
 
-    // 2. Fallback to default external browser (e.g. Waydroid / Chrome browser)
     try {
       final launchedWeb = await launchUrl(
         webUri,
@@ -175,14 +145,5 @@ class BbcVideoSyncService {
     }
 
     return false;
-  }
-
-  String _unescapeXml(String text) {
-    return text
-        .replaceAll('&amp;', '&')
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        .replaceAll('&#39;', "'")
-        .replaceAll('&quot;', '"');
   }
 }

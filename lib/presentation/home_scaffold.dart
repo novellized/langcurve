@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import '../core/theme/theme_controller.dart';
 import '../modules/dashboard/views/dashboard_view.dart';
 import '../modules/dictionary/views/dictionary_view.dart';
 import '../modules/notebook/views/notebook_view.dart';
 import '../modules/practice/views/practice_view.dart';
-import '../modules/backup/views/settings_dialog.dart';
+import '../modules/profile/views/profile_view.dart';
+import '../modules/backup/views/settings_view.dart';
 import '../modules/notebook/repositories/notebook_repository.dart';
 
 class AdaptiveHomeScaffold extends StatefulWidget {
@@ -16,26 +16,8 @@ class AdaptiveHomeScaffold extends StatefulWidget {
 
 class _AdaptiveHomeScaffoldState extends State<AdaptiveHomeScaffold> {
   int _selectedTabIndex = 0;
-  int _userXp = 0;
-  int _streakCount = 0;
   int? _practiceTopicId;
   final NotebookRepository _notebookRepo = NotebookRepository();
-
-  @override
-  void initState() {
-    super.initState();
-    _loadProfileData();
-  }
-
-  Future<void> _loadProfileData() async {
-    final profile = await _notebookRepo.getUserProfile();
-    if (mounted) {
-      setState(() {
-        _userXp = profile['xp'] as int;
-        _streakCount = profile['streak_count'] as int;
-      });
-    }
-  }
 
   void _navigateToTab(int index, {int? topicId}) {
     setState(() {
@@ -44,7 +26,6 @@ class _AdaptiveHomeScaffoldState extends State<AdaptiveHomeScaffold> {
         _practiceTopicId = topicId;
       }
     });
-    _loadProfileData();
   }
 
   @override
@@ -57,160 +38,112 @@ class _AdaptiveHomeScaffoldState extends State<AdaptiveHomeScaffold> {
       const DictionaryView(),
       NotebookView(onPracticeTopic: (id) => _navigateToTab(3, topicId: id)),
       PracticeView(initialTopicId: _practiceTopicId),
+      ProfileView(onNavigate: _navigateToTab),
+      SettingsView(onDataChanged: () => setState(() {})),
     ];
 
     return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          children: [
-            Icon(Icons.auto_graph, color: colorScheme.primary),
-            const SizedBox(width: 8),
-            Text(
-              'LangCurve',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: colorScheme.primary,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          // Daily Streak Chip
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            margin: const EdgeInsets.only(right: 6),
-            decoration: BoxDecoration(
-              color: Colors.orange.shade100,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('🔥', style: TextStyle(fontSize: 14)),
-                const SizedBox(width: 4),
-                Text(
-                  '$_streakCount ngày',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.orange.shade900,
+      appBar: null, // Removed top AppBar per user specification
+      body: SafeArea(
+        child: isDesktopOrTablet
+            ? Row(
+                children: [
+                  NavigationRail(
+                    selectedIndex: _selectedTabIndex,
+                    onDestinationSelected: (idx) => _navigateToTab(idx),
+                    labelType: NavigationRailLabelType.none, // Hide labels
+                    destinations: const [
+                      NavigationRailDestination(
+                        icon: Icon(Icons.grid_view_outlined),
+                        selectedIcon: Icon(Icons.grid_view_rounded),
+                        label: Text(''),
+                      ),
+                      NavigationRailDestination(
+                        icon: Icon(Icons.search_outlined),
+                        selectedIcon: Icon(Icons.search_rounded),
+                        label: Text(''),
+                      ),
+                      NavigationRailDestination(
+                        icon: Icon(Icons.auto_stories_outlined),
+                        selectedIcon: Icon(Icons.auto_stories_rounded),
+                        label: Text(''),
+                      ),
+                      NavigationRailDestination(
+                        icon: Icon(Icons.school_outlined),
+                        selectedIcon: Icon(Icons.school_rounded),
+                        label: Text(''),
+                      ),
+                      NavigationRailDestination(
+                        icon: Icon(Icons.person_outlined),
+                        selectedIcon: Icon(Icons.person_rounded),
+                        label: Text(''),
+                      ),
+                      NavigationRailDestination(
+                        icon: Icon(Icons.settings_outlined),
+                        selectedIcon: Icon(Icons.settings_rounded),
+                        label: Text(''),
+                      ),
+                    ],
                   ),
-                ),
-              ],
-            ),
-          ),
-
-          // XP Chip
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            margin: const EdgeInsets.only(right: 6),
-            decoration: BoxDecoration(
-              color: colorScheme.primaryContainer,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.bolt, color: Colors.amber, size: 16),
-                const SizedBox(width: 2),
-                Text(
-                  '$_userXp XP',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: colorScheme.onPrimaryContainer,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Theme Toggle Button
-          IconButton(
-            icon: Icon(
-              ThemeController.instance.isDarkMode ? Icons.dark_mode : Icons.light_mode,
-            ),
-            tooltip: 'Chuyển đổi giao diện sáng/tối',
-            onPressed: () {
-              ThemeController.instance.toggleTheme();
-            },
-          ),
-
-          // Settings Button
-          IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            tooltip: 'Cài đặt & Sao lưu',
-            onPressed: () {
-              showDialog(
-                context: context,
-                builder: (_) => SettingsDialog(onDataChanged: _loadProfileData),
-              );
-            },
-          ),
-        ],
+                  const VerticalDivider(thickness: 1, width: 1),
+                  Expanded(child: pages[_selectedTabIndex]),
+                ],
+              )
+            : pages[_selectedTabIndex],
       ),
-      body: isDesktopOrTablet
-          ? Row(
-              children: [
-                NavigationRail(
+      bottomNavigationBar: isDesktopOrTablet
+          ? null
+          : Container(
+              decoration: BoxDecoration(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.08),
+                    blurRadius: 10,
+                    offset: const Offset(0, -2),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                child: NavigationBar(
                   selectedIndex: _selectedTabIndex,
                   onDestinationSelected: (idx) => _navigateToTab(idx),
-                  labelType: NavigationRailLabelType.all,
+                  labelBehavior: NavigationDestinationLabelBehavior.alwaysHide, // Hide labels
                   destinations: const [
-                    NavigationRailDestination(
-                      icon: Icon(Icons.dashboard_outlined),
-                      selectedIcon: Icon(Icons.dashboard),
-                      label: Text('Tổng quan'),
+                    NavigationDestination(
+                      icon: Icon(Icons.grid_view_outlined),
+                      selectedIcon: Icon(Icons.grid_view_rounded),
+                      label: '',
                     ),
-                    NavigationRailDestination(
-                      icon: Icon(Icons.search),
+                    NavigationDestination(
+                      icon: Icon(Icons.search_outlined),
                       selectedIcon: Icon(Icons.search_rounded),
-                      label: Text('Tra từ'),
+                      label: '',
                     ),
-                    NavigationRailDestination(
-                      icon: Icon(Icons.book_outlined),
-                      selectedIcon: Icon(Icons.book),
-                      label: Text('Sổ từ'),
+                    NavigationDestination(
+                      icon: Icon(Icons.auto_stories_outlined),
+                      selectedIcon: Icon(Icons.auto_stories_rounded),
+                      label: '',
                     ),
-                    NavigationRailDestination(
+                    NavigationDestination(
                       icon: Icon(Icons.school_outlined),
-                      selectedIcon: Icon(Icons.school),
-                      label: Text('Ôn tập'),
+                      selectedIcon: Icon(Icons.school_rounded),
+                      label: '',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.person_outlined),
+                      selectedIcon: Icon(Icons.person_rounded),
+                      label: '',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.settings_outlined),
+                      selectedIcon: Icon(Icons.settings_rounded),
+                      label: '',
                     ),
                   ],
                 ),
-                const VerticalDivider(thickness: 1, width: 1),
-                Expanded(child: pages[_selectedTabIndex]),
-              ],
-            )
-          : pages[_selectedTabIndex],
-      bottomNavigationBar: isDesktopOrTablet
-          ? null
-          : NavigationBar(
-              selectedIndex: _selectedTabIndex,
-              onDestinationSelected: (idx) => _navigateToTab(idx),
-              destinations: const [
-                NavigationDestination(
-                  icon: Icon(Icons.dashboard_outlined),
-                  selectedIcon: Icon(Icons.dashboard),
-                  label: 'Tổng quan',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.search),
-                  selectedIcon: Icon(Icons.search_rounded),
-                  label: 'Tra từ',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.book_outlined),
-                  selectedIcon: Icon(Icons.book),
-                  label: 'Sổ từ',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.school_outlined),
-                  selectedIcon: Icon(Icons.school),
-                  label: 'Ôn tập',
-                ),
-              ],
+              ),
             ),
     );
   }
