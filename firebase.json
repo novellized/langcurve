@@ -1,5 +1,14 @@
 {
   "firestore": {
     "rules": "firestore.rules"
+  },
+  "auth": {
+    "providers": {
+      "anonymous": true,
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "LangCurve",
+        "supportEmail": "manhheu327@gmail.com"
+      }
+    }
   }
 }

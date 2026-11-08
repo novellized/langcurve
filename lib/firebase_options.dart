@@ -1,13 +1,12 @@
-// File generated template for FlutterFire CLI.
-// Run `flutterfire configure` after creating your Firebase project to replace
-// the placeholder values below with your actual project keys.
+// File configured for Firebase project: langcurve-app (742561079237)
+// ignore_for_file: type=lint
 
 import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
 
 class DefaultFirebaseOptions {
-  /// Returns true if the user has replaced the placeholder API keys with real Firebase credentials.
+  /// Returns true if the project has been configured with real Firebase credentials.
   static bool get isConfigured {
     try {
       final opts = currentPlatform;
@@ -41,55 +40,59 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'YOUR_WEB_API_KEY',
-    appId: '1:000000000000:web:0000000000000000000000',
-    messagingSenderId: '000000000000',
-    projectId: 'your-firebase-project-id',
-    authDomain: 'your-firebase-project-id.firebaseapp.com',
-    storageBucket: 'your-firebase-project-id.firebasestorage.app',
+    apiKey: 'AIzaSyDSdjRrTbwpRiU6XRVMo69knWVNevjYmf4',
+    appId: '1:742561079237:web:0671ce8228ee70c7d275ac',
+    messagingSenderId: '742561079237',
+    projectId: 'langcurve-app',
+    authDomain: 'langcurve-app.firebaseapp.com',
+    storageBucket: 'langcurve-app.firebasestorage.app',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'YOUR_ANDROID_API_KEY',
-    appId: '1:000000000000:android:0000000000000000000000',
-    messagingSenderId: '000000000000',
-    projectId: 'your-firebase-project-id',
-    storageBucket: 'your-firebase-project-id.firebasestorage.app',
+    apiKey: 'AIzaSyD0pEdfrqolOg5kszm754VxwAnF5OUQUas',
+    appId: '1:742561079237:android:c5d0948a1b33ab0cd275ac',
+    messagingSenderId: '742561079237',
+    projectId: 'langcurve-app',
+    storageBucket: 'langcurve-app.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'YOUR_IOS_API_KEY',
-    appId: '1:000000000000:ios:0000000000000000000000',
-    messagingSenderId: '000000000000',
-    projectId: 'your-firebase-project-id',
-    storageBucket: 'your-firebase-project-id.firebasestorage.app',
+    apiKey: 'AIzaSyDM15_0RTIearBqsPu1hyL1q8DneEzfOm4',
+    appId: '1:742561079237:ios:055d63513991e5ead275ac',
+    messagingSenderId: '742561079237',
+    projectId: 'langcurve-app',
+    storageBucket: 'langcurve-app.firebasestorage.app',
+    iosClientId:
+        '742561079237-7m9e5a4scbvi9o7lpj7uuggorp12urag.apps.googleusercontent.com',
     iosBundleId: 'com.example.langcurve',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'YOUR_MACOS_API_KEY',
-    appId: '1:000000000000:ios:0000000000000000000000',
-    messagingSenderId: '000000000000',
-    projectId: 'your-firebase-project-id',
-    storageBucket: 'your-firebase-project-id.firebasestorage.app',
+    apiKey: 'AIzaSyDM15_0RTIearBqsPu1hyL1q8DneEzfOm4',
+    appId: '1:742561079237:ios:055d63513991e5ead275ac',
+    messagingSenderId: '742561079237',
+    projectId: 'langcurve-app',
+    storageBucket: 'langcurve-app.firebasestorage.app',
+    iosClientId:
+        '742561079237-7m9e5a4scbvi9o7lpj7uuggorp12urag.apps.googleusercontent.com',
     iosBundleId: 'com.example.langcurve',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'YOUR_WINDOWS_API_KEY',
-    appId: '1:000000000000:web:0000000000000000000000',
-    messagingSenderId: '000000000000',
-    projectId: 'your-firebase-project-id',
-    authDomain: 'your-firebase-project-id.firebaseapp.com',
-    storageBucket: 'your-firebase-project-id.firebasestorage.app',
+    apiKey: 'AIzaSyDSdjRrTbwpRiU6XRVMo69knWVNevjYmf4',
+    appId: '1:742561079237:web:0671ce8228ee70c7d275ac',
+    messagingSenderId: '742561079237',
+    projectId: 'langcurve-app',
+    authDomain: 'langcurve-app.firebaseapp.com',
+    storageBucket: 'langcurve-app.firebasestorage.app',
   );
 
   static const FirebaseOptions linux = FirebaseOptions(
-    apiKey: 'YOUR_LINUX_API_KEY',
-    appId: '1:000000000000:web:0000000000000000000000',
-    messagingSenderId: '000000000000',
-    projectId: 'your-firebase-project-id',
-    authDomain: 'your-firebase-project-id.firebaseapp.com',
-    storageBucket: 'your-firebase-project-id.firebasestorage.app',
+    apiKey: 'AIzaSyDSdjRrTbwpRiU6XRVMo69knWVNevjYmf4',
+    appId: '1:742561079237:web:0671ce8228ee70c7d275ac',
+    messagingSenderId: '742561079237',
+    projectId: 'langcurve-app',
+    authDomain: 'langcurve-app.firebaseapp.com',
+    storageBucket: 'langcurve-app.firebasestorage.app',
   );
 }

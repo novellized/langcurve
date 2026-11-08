@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "742561079237",
+    "project_id": "langcurve-app",
+    "storage_bucket": "langcurve-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:742561079237:android:c5d0948a1b33ab0cd275ac",
+        "android_client_info": {
+          "package_name": "com.example.langcurve"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "742561079237-s8bpv87qrtvlsocnqvvck8g36c2jlese.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.langcurve",
+            "certificate_hash": "7f440a6334b7725985dbb9594c92be5e58abca7d"
+          }
+        },
+        {
+          "client_id": "742561079237-rafan3emmml3jd3vja4o7kde19d2ss1b.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD0pEdfrqolOg5kszm754VxwAnF5OUQUas"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "742561079237-rafan3emmml3jd3vja4o7kde19d2ss1b.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "742561079237-7m9e5a4scbvi9o7lpj7uuggorp12urag.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.langcurve"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
