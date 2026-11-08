@@ -17,10 +17,13 @@ class BackupService {
     final userRow = await db.query('user_profile', where: 'id = ?', whereArgs: [1]);
 
     final Map<String, dynamic> exportMap = {
-      'version': '1.0',
+      'version': '1.1',
       'export_date': DateTime.now().toIso8601String(),
       'user': {
         'xp': userRow.isNotEmpty ? (userRow.first['xp'] ?? 0) : 0,
+        'streak_count': userRow.isNotEmpty ? (userRow.first['streak_count'] ?? 0) : 0,
+        'last_study_date': userRow.isNotEmpty ? userRow.first['last_study_date'] : null,
+        'daily_goal': userRow.isNotEmpty ? (userRow.first['daily_goal'] ?? 10) : 10,
       },
       'topics': topics,
       'vocabularies': vocabularies,
@@ -129,15 +132,39 @@ class BackupService {
         }
       }
 
-      // 4. Update XP if present
-      if (decoded['user'] is Map && decoded['user']['xp'] != null) {
-        final xp = decoded['user']['xp'] as int;
-        await txn.update(
-          'user_profile',
-          {'xp': xp},
-          where: 'id = ?',
-          whereArgs: [1],
-        );
+      // 4. Update XP, Streak & Daily Goal if present
+      if (decoded['user'] is Map) {
+        final userMap = decoded['user'] as Map;
+        final existingProfileRows =
+            await txn.query('user_profile', where: 'id = ?', whereArgs: [1]);
+        final existingColumns = existingProfileRows.isNotEmpty
+            ? existingProfileRows.first.keys.toSet()
+            : <String>{'xp'};
+
+        final Map<String, Object?> updates = {};
+        if (userMap['xp'] is int && existingColumns.contains('xp')) {
+          updates['xp'] = userMap['xp'] as int;
+        }
+        if (userMap['streak_count'] is int &&
+            existingColumns.contains('streak_count')) {
+          updates['streak_count'] = userMap['streak_count'] as int;
+        }
+        if (userMap['last_study_date'] is String &&
+            existingColumns.contains('last_study_date')) {
+          updates['last_study_date'] = userMap['last_study_date'] as String;
+        }
+        if (userMap['daily_goal'] is int &&
+            existingColumns.contains('daily_goal')) {
+          updates['daily_goal'] = userMap['daily_goal'] as int;
+        }
+        if (updates.isNotEmpty) {
+          await txn.update(
+            'user_profile',
+            updates,
+            where: 'id = ?',
+            whereArgs: [1],
+          );
+        }
       }
     });
   }

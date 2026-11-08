@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'core/database/database_helper.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_controller.dart';
+import 'modules/auth/services/auth_service.dart';
 import 'presentation/home_scaffold.dart';
 
 void main() async {
@@ -9,6 +10,9 @@ void main() async {
 
   // Initialize SQLite database
   await DatabaseHelper.instance.database;
+
+  // Initialize Firebase & Local Auth state (offline-first safe)
+  await AuthService.instance.initialize();
 
   runApp(const LangCurveApp());
 }

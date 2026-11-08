@@ -43,7 +43,7 @@ class NotebookRepository {
     };
   }
 
-  /// Get user profile (XP, Streak, Daily Goal, Today progress)
+  /// Get user profile (XP, Streak, Daily Goal, Today progress, and Firebase Auth info)
   Future<Map<String, dynamic>> getUserProfile() async {
     final db = await _db;
     final userRow = await db.query('user_profile', where: 'id = ?', whereArgs: [1]);
@@ -54,6 +54,11 @@ class NotebookRepository {
         'last_study_date': null,
         'daily_goal': 10,
         'today_reviewed_count': 0,
+        'email': 'guest@langcurve.local',
+        'firebase_uid': null,
+        'display_name': 'Người học LangCurve',
+        'photo_url': null,
+        'last_synced_at': null,
       };
     }
 
@@ -62,9 +67,13 @@ class NotebookRepository {
     var streak = (row['streak_count'] as int?) ?? 0;
     final lastDateStr = row['last_study_date'] as String?;
     final dailyGoal = (row['daily_goal'] as int?) ?? 10;
+    final email = (row['email'] as String?) ?? 'guest@langcurve.local';
+    final firebaseUid = row['firebase_uid'] as String?;
+    final displayName = (row['display_name'] as String?) ?? 'Người học LangCurve';
+    final photoUrl = row['photo_url'] as String?;
+    final lastSyncedAt = row['last_synced_at'] as String?;
 
     // Check if streak is broken (more than 1 day missed)
-    final todayStr = _formatDate(DateTime.now());
     if (lastDateStr != null && lastDateStr.isNotEmpty) {
       final lastDate = DateTime.tryParse(lastDateStr);
       if (lastDate != null) {
@@ -84,7 +93,46 @@ class NotebookRepository {
       'last_study_date': lastDateStr,
       'daily_goal': dailyGoal,
       'today_reviewed_count': todayReviewedCount,
+      'email': email,
+      'firebase_uid': firebaseUid,
+      'display_name': displayName,
+      'photo_url': photoUrl,
+      'last_synced_at': lastSyncedAt,
     };
+  }
+
+  /// Updates the local user profile with Google / Firebase account metadata
+  Future<void> updateAuthProfile({
+    String? firebaseUid,
+    String? email,
+    String? displayName,
+    String? photoUrl,
+  }) async {
+    final db = await _db;
+    await db.update(
+      'user_profile',
+      {
+        'firebase_uid': firebaseUid,
+        'email': email ?? 'guest@langcurve.local',
+        'display_name': (displayName != null && displayName.trim().isNotEmpty)
+            ? displayName.trim()
+            : 'Người học LangCurve',
+        'photo_url': photoUrl,
+      },
+      where: 'id = ?',
+      whereArgs: [1],
+    );
+  }
+
+  /// Updates the last cloud synchronization timestamp
+  Future<void> updateLastSyncedAt(String? isoTimestamp) async {
+    final db = await _db;
+    await db.update(
+      'user_profile',
+      {'last_synced_at': isoTimestamp},
+      where: 'id = ?',
+      whereArgs: [1],
+    );
   }
 
   /// Records study activity today and updates daily Streak 🔥

@@ -1,10 +1,19 @@
 import 'package:flutter/material.dart';
+import '../../auth/services/auth_service.dart';
+import '../../backup/services/cloud_sync_service.dart';
 import '../../notebook/repositories/notebook_repository.dart';
 
 class ProfileView extends StatefulWidget {
   final Function(int targetTab)? onNavigate;
+  final AuthService? authService;
+  final CloudSyncService? cloudSyncService;
 
-  const ProfileView({super.key, this.onNavigate});
+  const ProfileView({
+    super.key,
+    this.onNavigate,
+    this.authService,
+    this.cloudSyncService,
+  });
 
   @override
   State<ProfileView> createState() => _ProfileViewState();
@@ -12,12 +21,19 @@ class ProfileView extends StatefulWidget {
 
 class _ProfileViewState extends State<ProfileView> {
   final NotebookRepository _notebookRepo = NotebookRepository();
+  late final AuthService _authService;
+  late final CloudSyncService _cloudSyncService;
 
   Map<String, dynamic> _profile = {
     'xp': 0,
     'streak_count': 0,
     'daily_goal': 10,
     'today_reviewed_count': 0,
+    'display_name': 'Người học LangCurve',
+    'email': 'guest@langcurve.local',
+    'firebase_uid': null,
+    'photo_url': null,
+    'last_synced_at': null,
   };
   Map<String, int> _stats = {
     'total_topics': 0,
@@ -25,11 +41,28 @@ class _ProfileViewState extends State<ProfileView> {
     'total_examples': 0,
   };
   bool _isLoading = true;
+  bool _isSyncing = false;
 
   @override
   void initState() {
     super.initState();
+    _authService = widget.authService ?? AuthService.instance;
+    _cloudSyncService =
+        widget.cloudSyncService ?? CloudSyncService(authService: _authService);
+    _authService.addListener(_onAuthChanged);
     _loadProfileData();
+  }
+
+  @override
+  void dispose() {
+    _authService.removeListener(_onAuthChanged);
+    super.dispose();
+  }
+
+  void _onAuthChanged() {
+    if (mounted) {
+      _loadProfileData();
+    }
   }
 
   Future<void> _loadProfileData() async {
@@ -46,8 +79,66 @@ class _ProfileViewState extends State<ProfileView> {
     }
   }
 
+  Future<void> _handleGoogleSignIn() async {
+    try {
+      final account = await _authService.signInWithGoogle();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Xin chào, ${account.displayName}! Đã đăng nhập Google.'),
+          ),
+        );
+      }
+      await _loadProfileData();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _handleSignOut() async {
+    await _authService.signOut();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Đã đăng xuất. Dữ liệu học ngoại tuyến vẫn được giữ nguyên.'),
+        ),
+      );
+    }
+    await _loadProfileData();
+  }
+
+  Future<void> _handleCloudSync() async {
+    setState(() => _isSyncing = true);
+    try {
+      await _cloudSyncService.syncToCloud();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Đã đồng bộ dữ liệu lên Cloud Firestore thành công!'),
+          ),
+        );
+      }
+      await _loadProfileData();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Lỗi đồng bộ: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSyncing = false);
+      }
+    }
+  }
+
   void _showEditDailyGoalDialog() {
-    final controller = TextEditingController(text: '${_profile['daily_goal'] ?? 10}');
+    final controller =
+        TextEditingController(text: '${_profile['daily_goal'] ?? 10}');
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -61,7 +152,8 @@ class _ProfileViewState extends State<ProfileView> {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Hủy')),
           FilledButton(
             onPressed: () async {
               final val = int.tryParse(controller.text.trim());
@@ -93,47 +185,121 @@ class _ProfileViewState extends State<ProfileView> {
     final totalWords = _stats['total_words'] ?? 0;
     final totalTopics = _stats['total_topics'] ?? 0;
 
+    final user = _authService.currentUser;
+    final isSignedIn = !user.isGuest;
+    final displayName = user.displayName;
+    final photoUrl = user.photoUrl;
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header Profile Card
+          // Header Profile & Google Account Card
           Card(
             color: colorScheme.surfaceContainerHigh,
             child: Padding(
               padding: const EdgeInsets.all(20.0),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  CircleAvatar(
-                    radius: 32,
-                    backgroundColor: colorScheme.primaryContainer,
-                    child: Icon(Icons.person, size: 36, color: colorScheme.onPrimaryContainer),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Người học LangCurve',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: colorScheme.onSurface,
-                          ),
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 32,
+                        backgroundColor: colorScheme.primaryContainer,
+                        backgroundImage:
+                            (photoUrl != null && photoUrl.isNotEmpty)
+                                ? NetworkImage(photoUrl)
+                                : null,
+                        child: (photoUrl == null || photoUrl.isEmpty)
+                            ? Icon(
+                                isSignedIn
+                                    ? Icons.verified_user
+                                    : Icons.person,
+                                size: 36,
+                                color: colorScheme.onPrimaryContainer,
+                              )
+                            : null,
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              displayName,
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: colorScheme.onSurface,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              isSignedIn
+                                  ? user.email
+                                  : 'Chế độ Ngoại tuyến • Cấp độ: Người chinh phục từ vựng',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: colorScheme.outline,
+                              ),
+                            ),
+                            if (user.lastSyncedAt != null) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                'Đồng bộ gần nhất: ${user.lastSyncedAt!.split('T').first}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: colorScheme.primary,
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Cấp độ: Người chinh phục từ vựng',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: colorScheme.outline,
-                          ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  if (!isSignedIn)
+                    FilledButton.icon(
+                      key: const Key('btn_google_sign_in'),
+                      onPressed: _authService.isBusy ? null : _handleGoogleSignIn,
+                      icon: _authService.isBusy
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.login),
+                      label: const Text('Đăng nhập bằng Google'),
+                    )
+                  else
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 8,
+                      children: [
+                        FilledButton.tonalIcon(
+                          key: const Key('btn_cloud_sync_profile'),
+                          onPressed: _isSyncing ? null : _handleCloudSync,
+                          icon: _isSyncing
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.cloud_upload_outlined, size: 18),
+                          label: const Text('Đồng bộ Cloud'),
+                        ),
+                        OutlinedButton.icon(
+                          key: const Key('btn_google_sign_out'),
+                          onPressed: _authService.isBusy ? null : _handleSignOut,
+                          icon: const Icon(Icons.logout, size: 18),
+                          label: const Text('Đăng xuất'),
                         ),
                       ],
                     ),
-                  ),
                 ],
               ),
             ),
@@ -150,7 +316,14 @@ class _ProfileViewState extends State<ProfileView> {
                     padding: const EdgeInsets.all(16.0),
                     child: Column(
                       children: [
-                        const Text('🔥 Chuỗi học', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.brown)),
+                        const Text(
+                          '🔥 Chuỗi học',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.brown,
+                          ),
+                        ),
                         const SizedBox(height: 6),
                         Text(
                           '$streak ngày',
@@ -173,7 +346,14 @@ class _ProfileViewState extends State<ProfileView> {
                     padding: const EdgeInsets.all(16.0),
                     child: Column(
                       children: [
-                        Text('⚡ Điểm XP', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: colorScheme.onPrimaryContainer)),
+                        Text(
+                          '⚡ Điểm XP',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: colorScheme.onPrimaryContainer,
+                          ),
+                        ),
                         const SizedBox(height: 6),
                         Text(
                           '$xp XP',
@@ -225,7 +405,10 @@ class _ProfileViewState extends State<ProfileView> {
                   const SizedBox(height: 8),
                   Text(
                     'Đã hoàn thành $todayCount / $dailyGoal từ vựng',
-                    style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant),
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
                   ),
                   const SizedBox(height: 10),
                   ClipRRect(
@@ -263,24 +446,36 @@ class _ProfileViewState extends State<ProfileView> {
                     contentPadding: EdgeInsets.zero,
                     leading: CircleAvatar(
                       backgroundColor: colorScheme.secondaryContainer,
-                      child: Icon(Icons.menu_book, color: colorScheme.onSecondaryContainer),
+                      child: Icon(
+                        Icons.menu_book,
+                        color: colorScheme.onSecondaryContainer,
+                      ),
                     ),
                     title: const Text('Tổng số từ vựng đã lưu'),
                     trailing: Text(
                       '$totalWords từ',
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
                     ),
                   ),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: CircleAvatar(
                       backgroundColor: colorScheme.tertiaryContainer,
-                      child: Icon(Icons.folder, color: colorScheme.onTertiaryContainer),
+                      child: Icon(
+                        Icons.folder,
+                        color: colorScheme.onTertiaryContainer,
+                      ),
                     ),
                     title: const Text('Tổng số chủ đề đã tạo'),
                     trailing: Text(
                       '$totalTopics chủ đề',
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
                     ),
                   ),
                 ],

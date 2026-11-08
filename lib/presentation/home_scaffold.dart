@@ -5,7 +5,6 @@ import '../modules/notebook/views/notebook_view.dart';
 import '../modules/practice/views/practice_view.dart';
 import '../modules/profile/views/profile_view.dart';
 import '../modules/backup/views/settings_view.dart';
-import '../modules/notebook/repositories/notebook_repository.dart';
 
 class AdaptiveHomeScaffold extends StatefulWidget {
   const AdaptiveHomeScaffold({super.key});
@@ -17,7 +16,6 @@ class AdaptiveHomeScaffold extends StatefulWidget {
 class _AdaptiveHomeScaffoldState extends State<AdaptiveHomeScaffold> {
   int _selectedTabIndex = 0;
   int? _practiceTopicId;
-  final NotebookRepository _notebookRepo = NotebookRepository();
 
   void _navigateToTab(int index, {int? topicId}) {
     setState(() {
@@ -30,7 +28,6 @@ class _AdaptiveHomeScaffoldState extends State<AdaptiveHomeScaffold> {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
     final isDesktopOrTablet = MediaQuery.of(context).size.width >= 640;
 
     final List<Widget> pages = [

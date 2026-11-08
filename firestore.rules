@@ -1,0 +1,148 @@
+rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// This security rules file assumes the following data structures:
+//
+// Collection: users
+// Document ID: {userId} (must match authenticated Firebase Auth request.auth.uid)
+// Fields:
+//   - uid: string (required, immutable, == userId, 1..128 chars) - Firebase Auth UID of the owner
+//   - email: string (required, 3..254 chars, valid email format) - User's email address (PII)
+//   - displayName: string (required, 1..150 chars) - User's display name
+//   - backupJson: string (required, 2..900000 chars) - Serialized JSON backup of topics, vocabularies, and SRS logs
+//   - photoUrl: string or null (optional, <= 2048 chars, http/https URL if string) - User's avatar URL
+//   - xp: int (optional, 0..100000000) - Gamification experience points
+//   - streakCount: int (optional, 0..100000) - Consecutive study day streak count
+//   - updatedAtIso: string (optional, <= 64 chars, ISO-8601 format) - Client-side sync timestamp string
+//   - updatedAt: timestamp (optional, <= request.time) - Server-side sync timestamp
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    // Check if the user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Check if user owns the resource (for user-owned documents)
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Check if user is owner based on existing document's uid field
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.uid;
+    }
+
+    // Verify UID hasn't been tampered with on create
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) ||
+        request.resource.data.uid == request.auth.uid;
+    }
+
+    // Ensure uid field is not modified on update
+    function uidNotModified() {
+      return !('uid' in request.resource.data) ||
+        request.resource.data.uid == resource.data.uid;
+    }
+
+    // Validate required fields exist
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    // Validate that the document contains only the allowed fields
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // Validate string length
+    function validStringLength(field, minLen, maxLen) {
+      return request.resource.data[field] is string &&
+        request.resource.data[field].size() >= minLen &&
+        request.resource.data[field].size() <= maxLen;
+    }
+
+    // Validate URL format (must start with https:// or http://)
+    function isValidUrl(url) {
+      return url is string &&
+        url.size() > 0 &&
+        url.size() <= 2048 &&
+        (url.matches("^https://.*") || url.matches("^http://.*"));
+    }
+
+    // Validate email format
+    function isValidEmail(email) {
+      return email is string &&
+        email.size() >= 3 &&
+        email.size() <= 254 &&
+        email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    // Validate ISO 8601 date string format (YYYY-MM-DDTHH:MM:SS)
+    function isValidDateString(dateStr) {
+      return dateStr is string &&
+        dateStr.size() >= 19 &&
+        dateStr.size() <= 64 &&
+        dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    // ===============================================================
+    // Domain Validators (Used in BOTH create and update)
+    // ===============================================================
+
+    function isValidUserBackup(userId) {
+      let data = request.resource.data;
+      return hasRequiredFields(['uid', 'email', 'displayName', 'backupJson']) &&
+        hasOnlyAllowedFields([
+          'uid',
+          'email',
+          'displayName',
+          'photoUrl',
+          'xp',
+          'streakCount',
+          'backupJson',
+          'updatedAtIso',
+          'updatedAt'
+        ]) &&
+        data.uid is string &&
+        data.uid == userId &&
+        data.uid.size() >= 1 &&
+        data.uid.size() <= 128 &&
+        isValidEmail(data.email) &&
+        validStringLength('displayName', 1, 150) &&
+        validStringLength('backupJson', 2, 900000) &&
+        (!('photoUrl' in data) || data.photoUrl == null || isValidUrl(data.photoUrl)) &&
+        (!('xp' in data) || (data.xp is int && data.xp >= 0 && data.xp <= 100000000)) &&
+        (!('streakCount' in data) || (data.streakCount is int && data.streakCount >= 0 && data.streakCount <= 100000)) &&
+        (!('updatedAtIso' in data) || isValidDateString(data.updatedAtIso)) &&
+        (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
+    }
+
+    // ===============================================================
+    // Collection Security Rules
+    // ===============================================================
+
+    // Per-user cloud backup and profile metadata (contains PII: email)
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && uidUnchanged() && isValidUserBackup(userId);
+      allow update: if isOwner(userId) && isDocOwner() && uidNotModified() && isValidUserBackup(userId);
+      allow delete: if isOwner(userId) && isDocOwner();
+    }
+
+    // Default deny for all other collections and paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

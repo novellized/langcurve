@@ -37,7 +37,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       dbPath,
-      version: 2,
+      version: 3,
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
       onConfigure: _configureDB,
@@ -98,7 +98,7 @@ class DatabaseHelper {
       )
     ''');
 
-    // 4. User profile, XP, Streak & Daily Goal table
+    // 4. User profile, XP, Streak, Daily Goal & Firebase Auth table
     await db.execute('''
       CREATE TABLE user_profile (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -106,7 +106,11 @@ class DatabaseHelper {
         email TEXT,
         streak_count INTEGER DEFAULT 0,
         last_study_date TEXT,
-        daily_goal INTEGER DEFAULT 10
+        daily_goal INTEGER DEFAULT 10,
+        firebase_uid TEXT,
+        display_name TEXT,
+        photo_url TEXT,
+        last_synced_at TEXT
       )
     ''');
 
@@ -141,7 +145,11 @@ class DatabaseHelper {
       'email': 'guest@langcurve.local',
       'streak_count': 0,
       'last_study_date': null,
-      'daily_goal': 10
+      'daily_goal': 10,
+      'firebase_uid': null,
+      'display_name': 'Người học LangCurve',
+      'photo_url': null,
+      'last_synced_at': null,
     });
   }
 
@@ -150,6 +158,12 @@ class DatabaseHelper {
       await db.execute('ALTER TABLE user_profile ADD COLUMN streak_count INTEGER DEFAULT 0');
       await db.execute('ALTER TABLE user_profile ADD COLUMN last_study_date TEXT');
       await db.execute('ALTER TABLE user_profile ADD COLUMN daily_goal INTEGER DEFAULT 10');
+    }
+    if (oldVersion < 3) {
+      await db.execute('ALTER TABLE user_profile ADD COLUMN firebase_uid TEXT');
+      await db.execute('ALTER TABLE user_profile ADD COLUMN display_name TEXT');
+      await db.execute('ALTER TABLE user_profile ADD COLUMN photo_url TEXT');
+      await db.execute('ALTER TABLE user_profile ADD COLUMN last_synced_at TEXT');
     }
   }
 
