@@ -8,11 +8,15 @@ import 'presentation/home_scaffold.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize SQLite database
-  await DatabaseHelper.instance.database;
+  try {
+    // Initialize SQLite / Web Storage database
+    await DatabaseHelper.instance.database;
 
-  // Initialize Firebase & Local Auth state (offline-first safe)
-  await AuthService.instance.initialize();
+    // Initialize Firebase & Local Auth state (offline-first safe)
+    await AuthService.instance.initialize();
+  } catch (e) {
+    debugPrint('Startup initialization warning: $e');
+  }
 
   runApp(const LangCurveApp());
 }

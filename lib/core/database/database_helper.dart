@@ -1,8 +1,10 @@
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:sqflite/sqflite.dart';
+import 'db_platform_stub.dart'
+    if (dart.library.ffi) 'db_platform_ffi.dart';
+import 'web_database.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
@@ -21,13 +23,18 @@ class DatabaseHelper {
   }
 
   Future<Database> _initDB(String filePath) async {
-    if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
-      sqfliteFfiInit();
-      databaseFactory = databaseFactoryFfi;
+    if (kIsWeb) {
+      return await WebSqliteDatabase.open(onCreate: _createDB);
     }
 
+    initDesktopDatabaseFactory();
+
+    final isDesktop = defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.linux ||
+        defaultTargetPlatform == TargetPlatform.macOS;
+
     String dbPath;
-    if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+    if (isDesktop) {
       final docDir = await getApplicationSupportDirectory();
       dbPath = join(docDir.path, filePath);
     } else {
@@ -127,15 +134,18 @@ class DatabaseHelper {
     // Seed default topics
     await db.insert('topics', {
       'name': 'Technology',
-      'description': 'Vocabulary related to computers, coding, software, and the digital world.'
+      'description':
+          'Vocabulary related to computers, coding, software, and the digital world.'
     });
     await db.insert('topics', {
       'name': 'Business & Career',
-      'description': 'Vocabulary for professional environments, meetings, finance, and office life.'
+      'description':
+          'Vocabulary for professional environments, meetings, finance, and office life.'
     });
     await db.insert('topics', {
       'name': 'Travel & Leisure',
-      'description': 'Words and phrases for commuting, exploring new places, hotel stays, and dining.'
+      'description':
+          'Words and phrases for commuting, exploring new places, hotel stays, and dining.'
     });
 
     // Seed default user
@@ -155,15 +165,19 @@ class DatabaseHelper {
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
-      await db.execute('ALTER TABLE user_profile ADD COLUMN streak_count INTEGER DEFAULT 0');
-      await db.execute('ALTER TABLE user_profile ADD COLUMN last_study_date TEXT');
-      await db.execute('ALTER TABLE user_profile ADD COLUMN daily_goal INTEGER DEFAULT 10');
+      await db.execute(
+          'ALTER TABLE user_profile ADD COLUMN streak_count INTEGER DEFAULT 0');
+      await db
+          .execute('ALTER TABLE user_profile ADD COLUMN last_study_date TEXT');
+      await db.execute(
+          'ALTER TABLE user_profile ADD COLUMN daily_goal INTEGER DEFAULT 10');
     }
     if (oldVersion < 3) {
       await db.execute('ALTER TABLE user_profile ADD COLUMN firebase_uid TEXT');
       await db.execute('ALTER TABLE user_profile ADD COLUMN display_name TEXT');
       await db.execute('ALTER TABLE user_profile ADD COLUMN photo_url TEXT');
-      await db.execute('ALTER TABLE user_profile ADD COLUMN last_synced_at TEXT');
+      await db
+          .execute('ALTER TABLE user_profile ADD COLUMN last_synced_at TEXT');
     }
   }
 
